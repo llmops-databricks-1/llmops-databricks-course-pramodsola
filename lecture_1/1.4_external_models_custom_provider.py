@@ -169,6 +169,6 @@ response_url = client.images.generate(
 )
 
 image_url = response_url.data[0].url
-print(f"Image generated!")
+print(f"  Image generated!")
 print(f"   Temporary URL (expires in 2 hours):")
 print(f"   {image_url}")
