@@ -8,8 +8,11 @@
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.serving import (
+    AiGatewayConfig,
+    AiGatewayInferenceTableConfig,
+    AiGatewayUsageTrackingConfig,
     EndpointCoreConfigInput,
-    ServedEntityInput
+    ServedEntityInput,
 )
 import time
 from loguru import logger
@@ -74,6 +77,10 @@ WORKLOAD_SIZE = "Small"  # Options: Small, Medium, Large
 SCALE_TO_ZERO = True  # Set to True to save costs when not in use
 MIN_PROVISIONED_THROUGHPUT = 0  # Must be 0 when scale_to_zero is enabled
 MAX_PROVISIONED_THROUGHPUT = 20  # Max capacity for auto-scaling
+
+catalog = "llmops_dev"
+schema = "arxiv"
+BUDGET_POLICY_ID = None  # e.g. "my-budget-policy-id"
 # COMMAND ----------
 
 # MAGIC %md
@@ -107,7 +114,15 @@ else:
 
 # COMMAND ----------
 
-# Create endpoint configuration (basic)
+ai_gateway_cfg = AiGatewayConfig(
+    inference_table_config=AiGatewayInferenceTableConfig(
+        enabled=True,
+        catalog_name=catalog,
+        schema_name=schema,
+        table_name_prefix="provisioned_throughput_monitoring",
+    ),
+    usage_tracking_config=AiGatewayUsageTrackingConfig(enabled=True),
+)
 
 endpoint_config = EndpointCoreConfigInput(
     name=ENDPOINT_NAME,
@@ -118,22 +133,20 @@ endpoint_config = EndpointCoreConfigInput(
             workload_size=WORKLOAD_SIZE,
             scale_to_zero_enabled=SCALE_TO_ZERO,
             min_provisioned_throughput=MIN_PROVISIONED_THROUGHPUT,
-            max_provisioned_throughput=MAX_PROVISIONED_THROUGHPUT
+            max_provisioned_throughput=MAX_PROVISIONED_THROUGHPUT,
         )
-    ]
+    ],
 )
 
 # Create the endpoint
 logger.info(f"Creating endpoint '{ENDPOINT_NAME}'...")
-logger.info("This will take 15-30 minutes...")
 
 w.serving_endpoints.create(
     name=ENDPOINT_NAME,
-    config=endpoint_config
+    config=endpoint_config,
+    ai_gateway=ai_gateway_cfg,
+    budget_policy_id=BUDGET_POLICY_ID,
 )
-
-logger.info("Endpoint creation initiated!")
-logger.info("Remember: Provisioned throughput incurs costs while running!")
 
 # COMMAND ----------
 

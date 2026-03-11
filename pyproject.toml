@@ -9,11 +9,11 @@ dependencies = [
     "numpy==2.4.0",
     "pandas==2.3.0",
     "pyarrow==22.0.0",
-    "databricks-sdk==0.78.0",
+    "databricks-sdk==0.85.0",
     "pydantic==2.11.7",
     "loguru==0.7.3",
     "python-dotenv==1.1.1",
-    "databricks-vectorsearch>=0.63",
+    "databricks-vectorsearch==0.63",
     "openai==2.8.0",
     "databricks-mcp==0.4.0",
     "backoff==2.2.1",
@@ -21,46 +21,27 @@ dependencies = [
     "nest-asyncio==1.6.0",
     "arxiv==2.3.1",
     "databricks-agents==1.8.2",
-    "pyyaml==6.0.2",
-    "ipython>=8.20.0",
-    "ipykernel>=6.29.0",
-    "jupyter>=1.0.0",
-    "notebook>=7.0.0",
-    "psycopg>=3.1.0",
-    "psycopg-pool>=3.2.0"
+    "psycopg==3.3.2",
+    "psycopg-pool==3.3.0",
+    "psycopg[binary]==3.3.2"
 ]
-
-[tool.setuptools]
-include-package-data = true
-
-[tool.setuptools.package-data]
-arxiv_curator = ["../../../project_config.yml"]
 
 [project.optional-dependencies]
-notebook = [
-    "jupyterlab>=4.0.0",
-    "ipywidgets>=8.0.0"
-]
+dev = ["databricks-connect>=17.0, <18",
+       "ipykernel>=6.29.5, <7",
+       "pip>=25.0.1, <26",
+       "pre-commit>=4.1.0, <5"]
 
-dev = [
-    "arxiv-curator[notebook]",
-    "databricks-connect>=17.0, <18",
-    "pip>=25.0.1, <26",
-    "pre-commit>=4.1.0, <5",
-    "ruff>=0.8.0"
-]
-
-ci = [
-    "pre-commit>=4.1.0, <5",
-    "pytest>=8.3.4, <9"
-]
+ci = ["pre-commit>=4.1.0, <5",
+      "pytest>=8.3.4, <9"]
 
 [build-system]
-requires = ["setuptools>=72.0"]
+requires = [
+  "setuptools>=72.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where =["src"]
 include = ["arxiv_curator*"]
 
 [tool.setuptools.dynamic]

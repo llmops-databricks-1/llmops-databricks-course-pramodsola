@@ -85,6 +85,7 @@ response = client.chat.completions.create(
         {"role": "user", "content": "Explain LLMOps in 3 sentences."}
     ],
     max_tokens=200,
+     # Temperature ontrols randomness: 0.0 = deterministic, 1.0 = more creative/random
     temperature=0.7
 )
 

@@ -13,7 +13,7 @@ resources:
               - ../dist/*.whl
 
       tasks:
-        - task_key: hello_world
+        - task_key: arxiv_data_ingestion
           environment_key: default
           notebook_task:
             notebook_path: ../notebooks/1.3_arxiv_data_ingestion.py
