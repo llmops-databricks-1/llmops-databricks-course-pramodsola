@@ -1,5 +1,10 @@
 # Databricks notebook source
 
+# COMMAND ----------
+%pip install loguru==0.7.3 arxiv==2.3.1 pydantic==2.11.7 pyyaml --quiet
+
+# COMMAND ----------
+
 from datetime import datetime
 
 import arxiv

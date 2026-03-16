@@ -1,4 +1,9 @@
 # Databricks notebook source
+
+# COMMAND ----------
+%pip install loguru==0.7.3 openai==2.8.0 typing_extensions>=4.12.0 Pillow --quiet
+
+# COMMAND ----------
 # MAGIC %md
 # MAGIC # Lecture 1.4: External Models with Custom Provider
 
