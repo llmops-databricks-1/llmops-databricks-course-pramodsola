@@ -1,4 +1,9 @@
 # Databricks notebook source
+
+# COMMAND ----------
+%pip install loguru==0.7.3 openai==2.8.0 databricks-sdk==0.85.0 typing_extensions>=4.12.0 --quiet
+
+# COMMAND ----------
 # MAGIC %md
 # MAGIC # Lecture 1.1: Foundation Models Overview
 # MAGIC

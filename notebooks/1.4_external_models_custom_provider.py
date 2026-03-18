@@ -1,4 +1,9 @@
 # Databricks notebook source
+
+# COMMAND ----------
+%pip install loguru==0.7.3 openai==2.8.0 databricks-sdk==0.85.0 typing_extensions>=4.12.0 Pillow --quiet
+
+# COMMAND ----------
 # MAGIC %md
 # MAGIC # Lecture 1.4: External Models with Custom Provider
 
@@ -36,7 +41,14 @@
 # COMMAND ----------
 
 import mlflow.deployments
+from databricks.sdk import WorkspaceClient
 from loguru import logger
+
+w = WorkspaceClient()
+
+# Derive secret scope from current user: e.g. pramodk.sola@gmail.com -> pramodk_secrets
+user_prefix = w.current_user.me().user_name.split("@")[0].replace(".", "_")
+SECRET_SCOPE = f"{user_prefix}_secrets"
 
 # Get MLflow Deployments client
 client = mlflow.deployments.get_deploy_client("databricks")
@@ -63,7 +75,7 @@ except Exception:
                     "provider": "openai",
                     "task": "llm/v1/images",  # Image generation task type
                     "openai_config": {
-                        "openai_api_key": "{{secrets/llmops_course/openai_key}}",
+                        "openai_api_key": f"{{{{secrets/{SECRET_SCOPE}/openai_key}}}}",
                         "openai_api_base": "https://api.openai.com/v1",
                         "openai_api_type": "openai"
                     }
@@ -84,7 +96,6 @@ except Exception:
 
 # COMMAND ----------
 
-from databricks.sdk import WorkspaceClient
 from openai import OpenAI
 import base64
 from io import BytesIO
