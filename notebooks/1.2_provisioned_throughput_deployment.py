@@ -4,6 +4,15 @@
 %pip install loguru==0.7.3 openai==2.8.0 databricks-sdk==0.85.0 typing_extensions>=4.12.0 --quiet
 
 # COMMAND ----------
+# Install arxiv_curator from bundle artifact (works for both bundle jobs and manual runs)
+import subprocess, sys
+from pyspark.sql import SparkSession as _SparkSession
+
+_username = _SparkSession.builder.getOrCreate().sql("SELECT current_user()").first()[0]
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.1.0-py3-none-any.whl"
+subprocess.check_call([sys.executable, "-m", "pip", "install", _whl, "-q"])
+
+# COMMAND ----------
 # MAGIC %md
 # MAGIC # Lecture 1.2: Provisioned Throughput Deployment
 # MAGIC - Your own fine-tuned models

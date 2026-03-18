@@ -4,6 +4,15 @@
 %pip install loguru==0.7.3 arxiv==2.3.1 pydantic==2.11.7 pyyaml==6.0.2
 
 # COMMAND ----------
+# Install arxiv_curator from bundle artifact (works for both bundle jobs and manual runs)
+import subprocess, sys
+from pyspark.sql import SparkSession as _SparkSession
+
+_username = _SparkSession.builder.getOrCreate().sql("SELECT current_user()").first()[0]
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.1.0-py3-none-any.whl"
+subprocess.check_call([sys.executable, "-m", "pip", "install", _whl, "-q"])
+
+# COMMAND ----------
 
 from datetime import datetime
 
