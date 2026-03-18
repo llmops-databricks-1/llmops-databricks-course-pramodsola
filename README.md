@@ -111,10 +111,28 @@ databricks bundle run external_models_custom_provider_job
 
 ## Secrets Setup
 
-Notebook 1.4 uses OpenAI's DALL-E 3 via Databricks External Models. The API key is stored in a Databricks secret scope — never in code. The scope name is derived automatically from the logged-in user's email (e.g. `john.doe@company.com` → `john_doe_secrets`).
+Notebook 1.4 uses OpenAI's DALL-E 3 via Databricks External Models. The API key is stored in a Databricks secret scope — never hardcoded in any file.
+
+The scope name is **derived automatically at runtime** from the logged-in user's Databricks email — no code changes needed:
+
+| Email | Scope used |
+|---|---|
+| `john.doe@company.com` | `john_doe_secrets` |
+| `pramodk.sola@gmail.com` | `pramodk_secrets` |
+
+Each user must create their scope once and add their OpenAI key:
 
 ```bash
-# One-time setup
+# Step 1 — derive your scope name:
+#   take the part before @, replace dots with underscores, append _secrets
+#   e.g. john.doe@company.com -> john_doe_secrets
+
+# Step 2 — create the scope (one-time)
 databricks secrets create-scope {your_username}_secrets
+
+# Step 3 — add your OpenAI API key
 databricks secrets put-secret {your_username}_secrets openai_key --string-value sk-...
 ```
+
+> Get your OpenAI API key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
+> Note: OpenAI API usage is billed separately from ChatGPT Plus — add credits at `platform.openai.com/settings/organization/billing` before running.
