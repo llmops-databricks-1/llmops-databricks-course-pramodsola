@@ -10,7 +10,6 @@ dev:
   warehouse_id: 7077f4cb0e616c62
   vector_search_endpoint: llmops_course_vs_endpoint
   genie_space_id: 01f113061bf41578baff744a41bd9ab0
-  secret_scope: pramodk_secrets
 
 # Acceptance/Staging environment
 acc:
@@ -22,7 +21,6 @@ acc:
   warehouse_id: 7077f4cb0e616c62
   vector_search_endpoint: llmops_course_vs_endpoint
   genie_space_id: 01f113061bf41578baff744a41bd9ab0
-  secret_scope: llmops_course
 
 # Production environment
 prd:
@@ -34,7 +32,6 @@ prd:
   warehouse_id: 7077f4cb0e616c62
   vector_search_endpoint: llmops_course_vs_endpoint
   genie_space_id: 01f113061bf41578baff744a41bd9ab0
-  secret_scope: llmops_course
 
 # Model configuration
 model_config:

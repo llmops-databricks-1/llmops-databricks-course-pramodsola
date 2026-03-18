@@ -1,7 +1,7 @@
 # Databricks notebook source
 
 # COMMAND ----------
-%pip install loguru==0.7.3 openai==2.8.0 databricks-sdk==0.85.0 typing_extensions>=4.12.0 Pillow pyyaml==6.0.2 pydantic==2.11.7 --quiet
+%pip install loguru==0.7.3 openai==2.8.0 databricks-sdk==0.85.0 typing_extensions>=4.12.0 Pillow --quiet
 
 # COMMAND ----------
 # MAGIC %md
@@ -41,15 +41,14 @@
 # COMMAND ----------
 
 import mlflow.deployments
+from databricks.sdk import WorkspaceClient
 from loguru import logger
-from pyspark.sql import SparkSession
 
-from arxiv_curator.config import get_env, load_config
+w = WorkspaceClient()
 
-# Load config to get secret scope for this environment
-spark = SparkSession.builder.getOrCreate()
-env = get_env(spark)
-cfg = load_config("../project_config.yml", env)
+# Derive secret scope from current user: e.g. pramodk.sola@gmail.com -> pramodk_secrets
+user_prefix = w.current_user.me().user_name.split("@")[0].replace(".", "_")
+SECRET_SCOPE = f"{user_prefix}_secrets"
 
 # Get MLflow Deployments client
 client = mlflow.deployments.get_deploy_client("databricks")
@@ -76,7 +75,7 @@ except Exception:
                     "provider": "openai",
                     "task": "llm/v1/images",  # Image generation task type
                     "openai_config": {
-                        "openai_api_key": f"{{{{secrets/{cfg.secret_scope}/openai_key}}}}",
+                        "openai_api_key": f"{{{{secrets/{SECRET_SCOPE}/openai_key}}}}",
                         "openai_api_base": "https://api.openai.com/v1",
                         "openai_api_type": "openai"
                     }
@@ -97,7 +96,6 @@ except Exception:
 
 # COMMAND ----------
 
-from databricks.sdk import WorkspaceClient
 from openai import OpenAI
 import base64
 from io import BytesIO

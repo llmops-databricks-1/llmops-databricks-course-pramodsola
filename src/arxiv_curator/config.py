@@ -20,7 +20,6 @@ class ProjectConfig(BaseModel):
     warehouse_id: str = Field(..., description="Warehouse ID")
     vector_search_endpoint: str = Field(..., description="Vector search endpoint name")
     genie_space_id: str | None = Field(None, description="Genie space ID for MCP integration")
-    secret_scope: str = Field(..., description="Databricks secret scope for API keys")
     system_prompt: str = Field(
         default="You are a helpful AI assistant that helps users find and understand research papers.",
         description="System prompt for the agent"
