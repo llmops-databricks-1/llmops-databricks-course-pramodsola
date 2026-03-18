@@ -22,8 +22,14 @@ from databricks.sdk.service.serving import (
 import time
 from loguru import logger
 from openai import OpenAI
+from pyspark.sql import SparkSession
+
+from arxiv_curator.config import get_env, load_config
 
 w = WorkspaceClient()
+spark = SparkSession.builder.getOrCreate()
+env = get_env(spark)
+cfg = load_config("../project_config.yml", env)
 
 # COMMAND ----------
 
@@ -76,15 +82,16 @@ w = WorkspaceClient()
 # COMMAND ----------
 
 # Configuration - Using a real model from system.ai catalog
-ENDPOINT_NAME = "llama-3-2-1b-provisioned"  # Your endpoint name
+user_prefix = w.current_user.me().user_name.split("@")[0].replace(".", "-")
+ENDPOINT_NAME = f"{user_prefix}-llama-3-2-1b-provisioned"
 MODEL_NAME = "system.ai.llama_v3_2_1b_instruct"  # Model from system.ai catalog
 WORKLOAD_SIZE = "Small"  # Options: Small, Medium, Large
 SCALE_TO_ZERO = True  # Set to True to save costs when not in use
 MIN_PROVISIONED_THROUGHPUT = 0  # Must be 0 when scale_to_zero is enabled
 MAX_PROVISIONED_THROUGHPUT = 20  # Max capacity for auto-scaling
 
-catalog = "llmops_dev"
-schema = "arxiv"
+catalog = cfg.catalog
+schema = cfg.schema
 BUDGET_POLICY_ID = None  # e.g. "my-budget-policy-id"
 # COMMAND ----------
 

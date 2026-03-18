@@ -68,7 +68,7 @@ except Exception:
                     "provider": "openai",
                     "task": "llm/v1/images",  # Image generation task type
                     "openai_config": {
-                        "openai_api_key": "{{secrets/llmops_course/openai_key}}",
+                        "openai_api_key": "{{secrets/pramodk_secrets/openai_key}}",
                         "openai_api_base": "https://api.openai.com/v1",
                         "openai_api_type": "openai"
                     }
