@@ -2,8 +2,8 @@
 
 # Development environment
 dev:
-  catalog: llmops_dev
-  schema: arxiv
+  catalog: mlops_dev
+  schema: pramodks
   volume: arxiv_files
   llm_endpoint: databricks-llama-4-maverick
   embedding_endpoint: databricks-gte-large-en
@@ -13,8 +13,8 @@ dev:
 
 # Acceptance/Staging environment
 acc:
-  catalog: llmops_dev
-  schema: arxiv
+  catalog: mlops_acc
+  schema: pramodks
   volume: arxiv_files
   llm_endpoint: databricks-meta-llama-3-1-70b-instruct
   embedding_endpoint: databricks-gte-large-en
@@ -24,8 +24,8 @@ acc:
 
 # Production environment
 prd:
-  catalog: llmops_dev
-  schema: arxiv
+  catalog: mlops_prd
+  schema: pramodks
   volume: arxiv_files
   llm_endpoint: databricks-meta-llama-3-1-70b-instruct
   embedding_endpoint: databricks-gte-large-en

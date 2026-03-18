@@ -1,7 +1,7 @@
 # Databricks notebook source
 
 # COMMAND ----------
-%pip install loguru==0.7.3 arxiv==2.3.1 pydantic==2.11.7 pyyaml --quiet
+%pip install /Workspace/Users/pramodk.sola@gmail.com/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.1.0-py3-none-any.whl loguru==0.7.3 arxiv==2.3.1 pydantic==2.11.7 pyyaml
 
 # COMMAND ----------
 
