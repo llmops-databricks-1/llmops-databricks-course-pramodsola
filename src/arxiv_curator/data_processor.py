@@ -11,11 +11,11 @@ Vector Search Index (embeddings)
 """
 
 import json
-import os
 import re
 import time
 
 import arxiv
+from databricks.sdk.runtime import dbutils
 from loguru import logger
 from pyspark.sql import SparkSession
 from pyspark.sql import types as T
@@ -57,7 +57,7 @@ class DataProcessor:
 
         self.end = time.strftime("%Y%m%d%H%M", time.gmtime())
         self.pdf_dir = f"/Volumes/{self.catalog}/{self.schema}/{self.volume}/{self.end}"
-        os.makedirs(self.pdf_dir, exist_ok=True)
+        dbutils.fs.mkdirs(self.pdf_dir)
         self.papers_table = f"{self.catalog}.{self.schema}.arxiv_papers"
         self.parsed_table = f"{self.catalog}.{self.schema}.ai_parsed_docs_table"
 
