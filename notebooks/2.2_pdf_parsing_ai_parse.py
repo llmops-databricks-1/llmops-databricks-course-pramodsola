@@ -34,10 +34,20 @@ logger.info("✅ Using Databricks Connect Spark session")
 env = get_env(spark)
 cfg = load_config("../project_config.yml", env)
 
+logger.info(f"Catalog: {cfg.catalog}, Schema: {cfg.schema}, Volume: {cfg.volume}")
+
+# COMMAND ----------
+
+# Ensure the Unity Catalog Volume exists before downloading PDFs
+spark.sql(
+    f"CREATE VOLUME IF NOT EXISTS {cfg.catalog}.{cfg.schema}.{cfg.volume}"
+)
+logger.info(f"✅ Volume ready: {cfg.catalog}.{cfg.schema}.{cfg.volume}")
+
+# COMMAND ----------
+
 # Initialize the DataProcessor (reusable class from arxiv_curator package)
 processor = DataProcessor(spark=spark, config=cfg)
-
-logger.info(f"Catalog: {cfg.catalog}, Schema: {cfg.schema}, Volume: {cfg.volume}")
 
 # COMMAND ----------
 
