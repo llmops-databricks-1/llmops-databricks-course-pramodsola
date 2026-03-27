@@ -155,9 +155,9 @@ from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
 
-# Authenticate using Databricks SDK
+# Use the existing session token (no token creation needed)
 host = w.config.host
-token = w.tokens.create(lifetime_seconds=1200).token_value
+token = w.config.token
 
 client = OpenAI(
     api_key=token,
