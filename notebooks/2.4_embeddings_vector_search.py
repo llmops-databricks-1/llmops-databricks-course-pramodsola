@@ -154,6 +154,16 @@ vs_manager.create_endpoint_if_not_exists()
 
 # COMMAND ----------
 
+# If the index has a stale UUID (404 NOT_FOUND errors), run this cell to reset it.
+# Safe to run even if the index doesn't exist yet.
+try:
+    vs_manager.client.delete_index(index_name=vs_manager.index_name)
+    logger.info(f"Deleted stale index: {vs_manager.index_name}")
+except Exception as e:
+    logger.info(f"No existing index to delete: {e}")
+
+# COMMAND ----------
+
 # Create or get the vector search index using VectorSearchManager
 # This automatically:
 # - Creates the index if it doesn't exist
@@ -164,8 +174,34 @@ index = vs_manager.create_or_get_index()
 
 logger.info(f"\n✓ Vector search setup complete!")
 logger.info(f"  Index: {vs_manager.index_name}")
-logger.info(f"  Source: {vs_manager.catalog}.{vs_manager.schema}.arxiv_chunks")
+logger.info(f"  Source: {vs_manager.catalog}.{vs_manager.schema}.arxiv_chunks_table")
 logger.info(f"  Embedding Model: {vs_manager.embedding_model}")
+
+# COMMAND ----------
+
+# Sync the index (required for TRIGGERED pipeline type) and wait for it to be ready
+import time
+
+logger.info("Triggering index sync...")
+index.sync()
+logger.info("✓ Sync triggered — waiting for index to become ready (may take 5–15 min)...")
+
+for attempt in range(30):  # Poll up to 15 minutes (30 × 30s)
+    try:
+        idx_desc = vs_manager.client.get_index(index_name=vs_manager.index_name).describe()
+        ready = idx_desc.get("status", {}).get("ready_for_search", False)
+        row_count = idx_desc.get("status", {}).get("indexed_row_count", "?")
+        if ready:
+            logger.info(f"✓ Index is READY! Indexed rows: {row_count}")
+            # Refresh the index object so it has the current internal UUID
+            index = vs_manager.client.get_index(index_name=vs_manager.index_name)
+            break
+        logger.info(f"  Not ready yet (attempt {attempt + 1}/30, rows: {row_count}). Waiting 30s...")
+    except Exception as e:
+        logger.warning(f"  Status check failed: {e}. Retrying in 30s...")
+    time.sleep(30)
+else:
+    logger.warning("Index did not become ready within 15 minutes. Try running the search cell later.")
 
 # COMMAND ----------
 
@@ -497,7 +533,6 @@ for i, row in enumerate(parse_vector_search_results(results_reranked), 1):
 
 # Check index status
 index_info = vs_manager.client.get_index(
-    endpoint_name=vs_manager.endpoint_name,
     index_name=vs_manager.index_name
 )
 
