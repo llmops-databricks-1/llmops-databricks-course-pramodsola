@@ -16,6 +16,7 @@ import tempfile
 import time
 
 import arxiv
+from databricks.sdk import WorkspaceClient
 from loguru import logger
 from pyspark.sql import SparkSession
 from pyspark.sql import types as T
@@ -115,18 +116,19 @@ class DataProcessor:
         # Download papers and collect metadata
         records = []
 
+        w = WorkspaceClient()
         for paper in papers:
             paper_id = paper.get_short_id()
             try:
-                # Download to /tmp first (mkdir works there), then copy
-                # to Volume using open() — Volumes are object-storage
-                # backed so parent paths are created automatically.
+                # Download to /tmp, then upload to Volume via SDK.
+                # WorkspaceClient.files.upload() creates parent paths
+                # automatically and works in Databricks Serverless.
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     paper.download_pdf(dirpath=tmp_dir, filename=f"{paper_id}.pdf")
                     local_path = f"{tmp_dir}/{paper_id}.pdf"
                     volume_path = f"{self.pdf_dir}/{paper_id}.pdf"
-                    with open(local_path, "rb") as src, open(volume_path, "wb") as dst:
-                        dst.write(src.read())
+                    with open(local_path, "rb") as src:
+                        w.files.upload(volume_path, src, overwrite=True)
                 # Collect metadata
                 records.append(
                     {
@@ -141,8 +143,8 @@ class DataProcessor:
                     }
                 )
                 break
-            except Exception:
-                logger.warning(f"Paper {paper_id} was not successfully processed.")
+            except Exception as e:
+                logger.warning(f"Paper {paper_id} was not successfully processed: {e}")
             # Avoid hitting API rate limits
             time.sleep(3)
 
