@@ -155,9 +155,9 @@ from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
 
-# Use the existing session token (no token creation needed)
+# Get token from notebook context (works in both classic and serverless)
 host = w.config.host
-token = w.config.token
+token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()
 
 client = OpenAI(
     api_key=token,
