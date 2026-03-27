@@ -70,15 +70,23 @@ class DataProcessor:
             start string in "YYYYMMDDHHMM" format
         """
 
+        three_days_ago = time.strftime(
+            "%Y%m%d%H%M", time.gmtime(time.time() - 24 * 3600 * 3)
+        )
         if self.spark.catalog.tableExists(self.papers_table):
             result = self.spark.sql(f"""
                 SELECT max(processed)
                 FROM {self.papers_table}
             """).collect()
-            start = str(result[0][0])
-            logger.info(f"Found existing arxiv_papers table. Starting from: {start}")
+            max_processed = result[0][0]
+            if max_processed is not None:
+                start = str(max_processed)
+                logger.info(f"Found existing arxiv_papers table. Starting from: {start}")
+            else:
+                start = three_days_ago
+                logger.info(f"Table is empty. Starting from 3 days ago: {start}")
         else:
-            start = time.strftime("%Y%m%d%H%M", time.gmtime(time.time() - 24 * 3600 * 3))
+            start = three_days_ago
             logger.info(
                 f"No existing arxiv_papers table. Starting from 3 days ago: {start}"
             )
