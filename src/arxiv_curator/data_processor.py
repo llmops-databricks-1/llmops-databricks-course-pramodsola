@@ -302,9 +302,31 @@ class DataProcessor:
             )
         )
 
-        extract_chunks_udf = udf(self._extract_chunks, chunk_schema)
-        extract_paper_id_udf = udf(self._extract_paper_id, StringType())
-        clean_chunk_udf = udf(self._clean_chunk, StringType())
+        # Define UDFs as local functions so cloudpickle can serialize them
+        # without requiring arxiv_curator to be installed on Spark workers.
+        import json as _json
+        import re as _re
+
+        def _extract_chunks_fn(parsed_content_json: str) -> list:
+            parsed_dict = _json.loads(parsed_content_json)
+            chunks = []
+            for element in parsed_dict.get("document", {}).get("elements", []):
+                if element.get("type") == "text":
+                    chunks.append((element.get("id", ""), element.get("content", "")))
+            return chunks
+
+        def _extract_paper_id_fn(path: str) -> str:
+            return path.replace(".pdf", "").split("/")[-1]
+
+        def _clean_chunk_fn(text: str) -> str:
+            t = _re.sub(r"(\w)-\s*\n\s*(\w)", r"\1\2", text)
+            t = _re.sub(r"\s*\n\s*", " ", t)
+            t = _re.sub(r"\s+", " ", t)
+            return t.strip()
+
+        extract_chunks_udf = udf(_extract_chunks_fn, chunk_schema)
+        extract_paper_id_udf = udf(_extract_paper_id_fn, StringType())
+        clean_chunk_udf = udf(_clean_chunk_fn, StringType())
 
         metadata_df = self.spark.table(self.papers_table).select(
             col("arxiv_id"),
