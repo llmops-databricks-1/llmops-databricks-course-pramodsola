@@ -12,10 +12,10 @@ Vector Search Index (embeddings)
 
 import json
 import re
+import tempfile
 import time
 
 import arxiv
-from databricks.sdk.runtime import dbutils
 from loguru import logger
 from pyspark.sql import SparkSession
 from pyspark.sql import types as T
@@ -57,7 +57,6 @@ class DataProcessor:
 
         self.end = time.strftime("%Y%m%d%H%M", time.gmtime())
         self.pdf_dir = f"/Volumes/{self.catalog}/{self.schema}/{self.volume}/{self.end}"
-        dbutils.fs.mkdirs(self.pdf_dir)
         self.papers_table = f"{self.catalog}.{self.schema}.arxiv_papers"
         self.parsed_table = f"{self.catalog}.{self.schema}.ai_parsed_docs_table"
 
@@ -111,7 +110,15 @@ class DataProcessor:
         for paper in papers:
             paper_id = paper.get_short_id()
             try:
-                paper.download_pdf(dirpath=self.pdf_dir, filename=f"{paper_id}.pdf")
+                # Download to /tmp first (mkdir works there), then copy
+                # to Volume using open() — Volumes are object-storage
+                # backed so parent paths are created automatically.
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    paper.download_pdf(dirpath=tmp_dir, filename=f"{paper_id}.pdf")
+                    local_path = f"{tmp_dir}/{paper_id}.pdf"
+                    volume_path = f"{self.pdf_dir}/{paper_id}.pdf"
+                    with open(local_path, "rb") as src, open(volume_path, "wb") as dst:
+                        dst.write(src.read())
                 # Collect metadata
                 records.append(
                     {
