@@ -1,10 +1,7 @@
 """Vector search management for arxiv papers."""
 
-from typing import Any
-
-from loguru import logger
-
 from databricks.vector_search.client import VectorSearchClient
+from loguru import logger
 
 from arxiv_curator.config import ProjectConfig
 
@@ -49,32 +46,23 @@ class VectorSearchManager:
             else []
         )
         endpoint_exists = any(
-            (
-                ep.get("name")
-                if isinstance(ep, dict)
-                else getattr(ep, "name", None)
-            ) == self.endpoint_name
+            (ep.get("name") if isinstance(ep, dict) else getattr(ep, "name", None))
+            == self.endpoint_name
             for ep in endpoints
         )
 
         if not endpoint_exists:
-            logger.info(
-                f"Creating vector search endpoint: {self.endpoint_name}"
-            )
+            logger.info(f"Creating vector search endpoint: {self.endpoint_name}")
             self.client.create_endpoint_and_wait(
                 name=self.endpoint_name,
                 endpoint_type="STANDARD",
                 usage_policy_id=self.usage_policy_id,
             )
-            logger.info(
-                f"✓ Vector search endpoint created: {self.endpoint_name}"
-            )
+            logger.info(f"✓ Vector search endpoint created: {self.endpoint_name}")
         else:
-            logger.info(
-                f"✓ Vector search endpoint exists: {self.endpoint_name}"
-            )
+            logger.info(f"✓ Vector search endpoint exists: {self.endpoint_name}")
 
-    def create_or_get_index(self) -> Any:
+    def create_or_get_index(self) -> VectorSearchClient:
         """Create or get vector search index.
 
         Returns:
@@ -89,9 +77,7 @@ class VectorSearchManager:
             logger.info(f"✓ Vector search index exists: {self.index_name}")
             return index
         except Exception:
-            logger.info(
-                f"Index {self.index_name} not found, will create it"
-            )
+            logger.info(f"Index {self.index_name} not found, will create it")
 
         # Try to create the index
         try:
@@ -105,9 +91,7 @@ class VectorSearchManager:
                 embedding_model_endpoint_name=self.embedding_model,
                 usage_policy_id=self.usage_policy_id,
             )
-            logger.info(
-                f"✓ Vector search index created: {self.index_name}"
-            )
+            logger.info(f"✓ Vector search index created: {self.index_name}")
             return index
         except Exception as e:
             if "RESOURCE_ALREADY_EXISTS" not in str(e):

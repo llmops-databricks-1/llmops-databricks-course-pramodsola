@@ -12,6 +12,16 @@
 
 # COMMAND ----------
 
+# Install arxiv_curator from bundle artifact (works for both bundle jobs and manual runs)
+import subprocess, sys
+from pyspark.sql import SparkSession as _SparkSession
+
+_username = _SparkSession.builder.getOrCreate().sql("SELECT current_user()").first()[0]
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.1.0-py3-none-any.whl"
+subprocess.check_call([sys.executable, "-m", "pip", "install", _whl, "-q"])
+
+# COMMAND ----------
+
 from loguru import logger
 from pyspark.sql import SparkSession
 from databricks.vector_search.client import VectorSearchClient
@@ -181,16 +191,16 @@ logger.info(f"  Embedding Model: {vs_manager.embedding_model}")
 
 def parse_vector_search_results(results):
     """Parse vector search results from array format to dict format.
-    
+
     Args:
         results: Raw results from similarity_search()
-        
+
     Returns:
         List of dictionaries with column names as keys
     """
     columns = [col['name'] for col in results.get('manifest', {}).get('columns', [])]
     data_array = results.get('result', {}).get('data_array', [])
-    
+
     return [dict(zip(columns, row_data)) for row_data in data_array]
 
 # COMMAND ----------
