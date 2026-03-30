@@ -17,7 +17,7 @@ import subprocess, sys
 from pyspark.sql import SparkSession as _SparkSession
 
 _username = _SparkSession.builder.getOrCreate().sql("SELECT current_user()").first()[0]
-_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.2.0-py3-none-any.whl"
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.3.0-py3-none-any.whl"
 subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", _whl, "-q"])
 
 # COMMAND ----------
@@ -179,24 +179,35 @@ logger.info(f"  Embedding Model: {vs_manager.embedding_model}")
 
 # COMMAND ----------
 
-# Sync the index (required for TRIGGERED pipeline type) and wait for it to be ready
+# Sync the index (required for TRIGGERED pipeline type) and wait for it to be ready.
+# A freshly-created index needs ~2 min for its pipeline to provision before sync() works.
 import time
 
-logger.info("Triggering index sync...")
-index.sync()
-logger.info("✓ Sync triggered — waiting for index to become ready (may take 5–15 min)...")
+logger.info("Waiting for index pipeline to provision before syncing (up to 5 min)...")
+for attempt in range(10):
+    try:
+        index.sync()
+        logger.info("✓ Sync triggered!")
+        break
+    except Exception as e:
+        logger.warning(f"  sync() not ready yet (attempt {attempt + 1}/10): {e}. Waiting 30s...")
+        time.sleep(30)
+else:
+    logger.warning("Could not trigger sync — index pipeline may still be provisioning.")
 
+logger.info("Waiting for index to become ready for search (may take 5–15 min)...")
 for attempt in range(30):  # Poll up to 15 minutes (30 × 30s)
     try:
-        idx_desc = vs_manager.client.get_index(index_name=vs_manager.index_name).describe()
+        idx = vs_manager.client.get_index(index_name=vs_manager.index_name)
+        idx_desc = idx.describe()
         ready = idx_desc.get("status", {}).get("ready_for_search", False)
         row_count = idx_desc.get("status", {}).get("indexed_row_count", "?")
+        state = idx_desc.get("status", {}).get("detailed_state", "?")
         if ready:
-            logger.info(f"✓ Index is READY! Indexed rows: {row_count}")
-            # Refresh the index object so it has the current internal UUID
-            index = vs_manager.client.get_index(index_name=vs_manager.index_name)
+            logger.info(f"✓ Index is READY! State: {state}, rows: {row_count}")
+            index = idx  # Refresh so it holds the current internal UUID
             break
-        logger.info(f"  Not ready yet (attempt {attempt + 1}/30, rows: {row_count}). Waiting 30s...")
+        logger.info(f"  State: {state}, rows: {row_count} (attempt {attempt + 1}/30). Waiting 30s...")
     except Exception as e:
         logger.warning(f"  Status check failed: {e}. Retrying in 30s...")
     time.sleep(30)

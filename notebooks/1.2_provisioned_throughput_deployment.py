@@ -9,7 +9,7 @@ import subprocess, sys
 from pyspark.sql import SparkSession as _SparkSession
 
 _username = _SparkSession.builder.getOrCreate().sql("SELECT current_user()").first()[0]
-_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.2.0-py3-none-any.whl"
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.3.0-py3-none-any.whl"
 subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", _whl, "-q"])
 
 # COMMAND ----------
