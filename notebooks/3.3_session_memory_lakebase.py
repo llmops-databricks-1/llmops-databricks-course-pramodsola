@@ -3,256 +3,245 @@ import subprocess
 import sys
 
 _username = spark.sql("SELECT current_user()").collect()[0][0]  # noqa: F821
-_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.16.0-py3-none-any.whl"
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.17.0-py3-none-any.whl"
 subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", _whl, "-q"])
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC # Lecture 3.4: Session Memory with Lakebase
+# MAGIC # Lecture 3.3: Session Memory with Lakebase
 # MAGIC
 # MAGIC ## Topics Covered:
 # MAGIC - Lakebase (Databricks PostgreSQL) for session persistence
-# MAGIC - Managing conversation history
-# MAGIC - Connection pooling and authentication
-# MAGIC - Building stateful agents
+# MAGIC - PostgresAPI: project/branch/endpoint model
+# MAGIC - Managing conversation history with JSONB
+# MAGIC - Building stateful agents with LakebaseMemory
 
 # COMMAND ----------
 
+import json
+import urllib.parse
+from uuid import uuid4
+
+import psycopg
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.database import DatabaseInstance, DatabaseInstanceState
+from databricks.sdk.service.postgres import (
+    PostgresAPI,
+    Project,
+    ProjectDefaultEndpointSettings,
+    ProjectSpec,
+)
+from google.protobuf.duration_pb2 import Duration
+from loguru import logger
 from openai import OpenAI
 from pyspark.sql import SparkSession
-from uuid import uuid4
-from loguru import logger
 
+from arxiv_curator.config import get_env, load_config
 from arxiv_curator.memory import LakebaseMemory
-from arxiv_curator.config import load_config, get_env
-
-# COMMAND ----------
 
 spark = SparkSession.builder.getOrCreate()
 env = get_env(spark)
+cfg = load_config("../project_config.yml", env)
+
+w = WorkspaceClient()
+pg_api = PostgresAPI(w.api_client)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 1. Create Lakebase Instance
+# MAGIC ## 1. Create Personal Lakebase Project
 # MAGIC
 # MAGIC **Lakebase** is Databricks' managed PostgreSQL service:
-# MAGIC - Fully managed and serverless
+# MAGIC - Fully managed, scales to 0 when idle
 # MAGIC - Integrated with Databricks authentication
-# MAGIC - Supports standard PostgreSQL features
+# MAGIC - Project → Branch → Endpoint hierarchy
 # MAGIC - Ideal for session state, caching, and metadata
 
 # COMMAND ----------
 
-w = WorkspaceClient()
-cfg = load_config("../project_config.yml", env)
-_token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()  # noqa: F821
-
-instance_name = "arxiv-agent-instance"
-
-usage_policy_id = cfg.usage_policy_id  # TODO: replace with your usage policy ID
-
-# Create or get existing instance
-from databricks.sdk.errors import NotFound
+project_id = cfg.lakebase_project_id
 
 try:
-    instance = w.database.get_database_instance(instance_name)
-    logger.info(f"Using existing instance: {instance_name}")
-    if instance.state == DatabaseInstanceState.STOPPED:
-        logger.warning("Instance is STOPPED — asking admin to start it, or use SPN auth (notebook 3.4)")
-    lakebase_host = instance.read_write_dns
-except NotFound:
-    logger.info(f"Creating new instance: {instance_name}")
-    wait = w.database.create_database_instance(
-        DatabaseInstance(
-            name=instance_name, capacity="CU_1",
-            usage_policy_id=usage_policy_id
+    project = pg_api.get_project(name=f"projects/{project_id}")
+    logger.info(f"✓ Using existing Lakebase project: {project_id}")
+except Exception:
+    logger.info(f"Creating new Lakebase project: {project_id}")
+    project = pg_api.create_project(
+        project_id=project_id,
+        project=Project(
+            spec=ProjectSpec(
+                display_name=project_id,
+                default_endpoint_settings=ProjectDefaultEndpointSettings(
+                    autoscaling_limit_min_cu=1,
+                    autoscaling_limit_max_cu=4,
+                    suspend_timeout_duration=Duration(seconds=300),
+                ),
+            ),
         ),
-    )
-    instance = wait.result()
-    lakebase_host = instance.read_write_dns
-
-logger.info(f"Lakebase host: {lakebase_host}")
+    ).wait()
+    logger.info(f"✓ Created Lakebase project: {project_id}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 2. Initialize Memory Manager
-# MAGIC
-# MAGIC The `LakebaseMemory` class handles:
-# MAGIC - Connection pooling
-# MAGIC - Authentication (SPN or user credentials)
-# MAGIC - Table creation
-# MAGIC - Message persistence
+# MAGIC ## 2. Connect and Create Table
 
 # COMMAND ----------
 
-memory = LakebaseMemory(
-    host=lakebase_host,
-    instance_name=instance_name,
+default_branch = next(iter(pg_api.list_branches(parent=project.name)))
+endpoint = next(iter(pg_api.list_endpoints(parent=default_branch.name)))
+host = endpoint.status.hosts.host
+
+pg_credential = pg_api.generate_database_credential(endpoint=endpoint.name)
+user = w.current_user.me()
+username = urllib.parse.quote_plus(user.user_name)
+conn_string = (
+    f"postgresql://{username}:{pg_credential.token}@{host}:5432/"
+    "databricks_postgres?sslmode=require"
 )
 
-logger.info("✓ Memory manager initialized")
+logger.info(f"Lakebase host: {host}")
+
+# COMMAND ----------
+
+with psycopg.connect(conn_string) as conn:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS session_messages (
+            id SERIAL PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            message_data JSONB NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_session_messages_session_id
+        ON session_messages(session_id)
+    """)
+
+logger.info("✓ session_messages table ready")
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## 3. Save and Load Messages
-# MAGIC
-# MAGIC Messages are stored per session ID:
-# MAGIC - Each session has a unique ID
-# MAGIC - Messages are stored in order
-# MAGIC - Sessions can be resumed later
 
 # COMMAND ----------
 
-# Create a test session
-session_id = f"test-session-{uuid4()}"
-
-# Save some messages
+test_session_id = f"test-session-{uuid4()}"
 test_messages = [
-    {"role": "user", "content": "What are recent papers on transformers?"},
-    {"role": "assistant", "content": "Here are some recent papers on transformer architectures..."},
-    {"role": "user", "content": "Tell me more about the first one"},
+    {"role": "user", "content": "Hello, what can you help me with?"},
+    {"role": "assistant", "content": "I can help you find research papers."},
+    {"role": "user", "content": "Find papers about LLM reasoning"},
 ]
 
-memory.save_messages(session_id, test_messages)
-logger.info(f"✓ Saved {len(test_messages)} messages to session: {session_id}")
+with psycopg.connect(conn_string) as conn:
+    for msg in test_messages:
+        conn.execute(
+            "INSERT INTO session_messages (session_id, message_data) VALUES (%s, %s)",
+            (test_session_id, json.dumps(msg)),
+        )
+
+logger.info(f"✓ Saved {len(test_messages)} messages to session: {test_session_id}")
 
 # COMMAND ----------
 
-# Load messages back
-loaded_messages = memory.load_messages(session_id)
+with psycopg.connect(conn_string) as conn:
+    result = conn.execute(
+        """
+        SELECT message_data, created_at FROM session_messages
+        WHERE session_id = %s
+        ORDER BY created_at ASC
+        """,
+        (test_session_id,),
+    ).fetchall()
 
-logger.info(f"✓ Loaded {len(loaded_messages)} messages:")
-for i, msg in enumerate(loaded_messages, 1):
-    logger.info(f"  {i}. [{msg['role']}] {msg['content'][:50]}...")
+logger.info(f"✓ Loaded {len(result)} messages:")
+for row in result:
+    logger.info(f"  [{row[1]}] {row[0]}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Multi-Turn Conversation
-# MAGIC
-# MAGIC Demonstrate a stateful conversation:
+# MAGIC ## 4. Using LakebaseMemory Class
 
 # COMMAND ----------
 
-# Start a new session
-conversation_id = f"conversation-{uuid4()}"
+memory = LakebaseMemory(project_id=project_id)
 
-# Turn 1
-turn1_messages = [
-    {"role": "user", "content": "I'm interested in LLM evaluation metrics"}
+# COMMAND ----------
+
+session_id = f"memory-test-{uuid4()}"
+messages = [
+    {"role": "user", "content": "What papers discuss transformer architectures?"},
+    {"role": "assistant", "content": "Here are some relevant papers..."},
 ]
-memory.save_messages(conversation_id, turn1_messages)
 
-# Simulate agent response
-turn1_response = [
-    {"role": "assistant", "content": "Common LLM evaluation metrics include BLEU, ROUGE, and BERTScore..."}
-]
-memory.save_messages(conversation_id, turn1_response)
+memory.save_messages(session_id, messages)
+logger.info(f"✓ Saved messages to session: {session_id}")
 
-# Turn 2 - reference to previous context
-turn2_messages = [
-    {"role": "user", "content": "Which one is best for summarization?"}
-]
-memory.save_messages(conversation_id, turn2_messages)
+# COMMAND ----------
 
-# Load full conversation
-full_conversation = memory.load_messages(conversation_id)
-
-logger.info(f"✓ Full conversation ({len(full_conversation)} messages):")
-for msg in full_conversation:
-    logger.info(f"  [{msg['role']}] {msg['content']}")
+loaded = memory.load_messages(session_id)
+logger.info(f"✓ Loaded {len(loaded)} messages:")
+for msg in loaded:
+    logger.info(f"  {msg['role']}: {msg['content'][:50]}...")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Using Memory with an LLM
-# MAGIC
-# MAGIC Integrate memory with LLM calls for stateful conversations:
+# MAGIC ## 5. Stateful Multi-Turn Conversation with LLM
 
 # COMMAND ----------
 
-# Create OpenAI client for Databricks
-client = OpenAI(
-    api_key=_token,
-    base_url=f"{w.config.host}/serving-endpoints"
-)
+_token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()  # noqa: F821
+client = OpenAI(api_key=_token, base_url=f"{w.config.host}/serving-endpoints")
 
-def chat_with_memory(session_id: str, user_message: str, memory: LakebaseMemory) -> str:
+
+def chat_with_memory(
+    session_id: str, user_message: str, memory: LakebaseMemory
+) -> str:
     """Chat with LLM using session memory for context."""
-    # Load previous messages
     previous_messages = memory.load_messages(session_id)
-
-    # Build messages with system prompt
-    messages = [
-        {"role": "system", "content": "You are a helpful research assistant."}
-    ] + previous_messages + [
-        {"role": "user", "content": user_message}
-    ]
-
-    # Call LLM
+    messages = (
+        [{"role": "system", "content": "You are a helpful research assistant."}]
+        + previous_messages
+        + [{"role": "user", "content": user_message}]
+    )
     response = client.chat.completions.create(
         model=cfg.llm_endpoint,
         messages=messages,
     )
-
     assistant_response = response.choices[0].message.content
-
-    # Save new messages to memory
-    memory.save_messages(session_id, [
-        {"role": "user", "content": user_message},
-        {"role": "assistant", "content": assistant_response},
-    ])
-
+    memory.save_messages(
+        session_id,
+        [
+            {"role": "user", "content": user_message},
+            {"role": "assistant", "content": assistant_response},
+        ],
+    )
     return assistant_response
+
 
 logger.info("✓ Chat function with memory created")
 
 # COMMAND ----------
 
-# Create a new session with memory
 agent_session_id = f"agent-session-{uuid4()}"
 
-# First query
 response1 = chat_with_memory(agent_session_id, "What is RAG in the context of LLMs?", memory)
 logger.info(f"Response 1: {response1[:200]}...")
 
 # COMMAND ----------
 
-# Follow-up query with context (memory is automatically loaded)
 response2 = chat_with_memory(agent_session_id, "What are the main components?", memory)
 logger.info(f"Response 2: {response2[:200]}...")
 
 # COMMAND ----------
 
-# View full conversation
-full_agent_conversation = memory.load_messages(agent_session_id)
-
-logger.info(f"✓ Full agent conversation ({len(full_agent_conversation)} messages):")
-for i, msg in enumerate(full_agent_conversation, 1):
-    role = msg["role"]
+full_conversation = memory.load_messages(agent_session_id)
+logger.info(f"✓ Full conversation ({len(full_conversation)} messages):")
+for i, msg in enumerate(full_conversation, 1):
     content = msg["content"][:100] + "..." if len(msg["content"]) > 100 else msg["content"]
-    logger.info(f"  {i}. [{role}] {content}")
+    logger.info(f"  {i}. [{msg['role']}] {content}")
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Summary
-# MAGIC
-# MAGIC In this notebook, we learned:
-# MAGIC
-# MAGIC 1. ✅ How to create and manage Lakebase instances
-# MAGIC 2. ✅ How to use `LakebaseMemory` for session persistence
-# MAGIC 3. ✅ How to save and load conversation history
-# MAGIC 4. ✅ How to build stateful multi-turn conversations
-# MAGIC 5. ✅ How to integrate memory with agents
-# MAGIC
-# MAGIC **Next Steps:**
-# MAGIC - Implement session expiration
-# MAGIC - Add conversation summarization
-# MAGIC - Build a chatbot UI with session management
+memory.close()

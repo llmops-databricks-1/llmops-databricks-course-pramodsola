@@ -5,7 +5,7 @@ import sys
 _username = (
     spark.sql("SELECT current_user()").collect()[0][0]  # noqa: F821
 )
-_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.16.0-py3-none-any.whl"
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.17.0-py3-none-any.whl"
 subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", _whl, "-q"])
 
 # COMMAND ----------
@@ -30,7 +30,6 @@ import os
 from uuid import uuid4
 
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.postgres import PostgresAPI
 from loguru import logger
 from pyspark.sql import SparkSession
 
@@ -42,7 +41,6 @@ env = get_env(spark)
 cfg = load_config("../project_config.yml", env)
 
 w = WorkspaceClient()
-pg_api = PostgresAPI(w.api_client)
 
 # COMMAND ----------
 
@@ -65,17 +63,10 @@ logger.info("✓ SPN credentials loaded from secret scope")
 
 # COMMAND ----------
 
-project_id = "arxiv-agent-lakebase"
-project = pg_api.get_project(name=f"projects/{project_id}")
-default_branch = next(iter(pg_api.list_branches(parent=project.name)))
-endpoint = next(iter(pg_api.list_endpoints(parent=default_branch.name)))
-lakebase_host = endpoint.status.hosts.host
-logger.info(f"Lakebase host: {lakebase_host}")
+project_id = cfg.lakebase_project_id
+logger.info(f"Connecting to Lakebase project: {project_id}")
 
-memory = LakebaseMemory(
-    host=lakebase_host,
-    instance_name=project_id,
-)
+memory = LakebaseMemory(project_id=project_id)
 
 # COMMAND ----------
 

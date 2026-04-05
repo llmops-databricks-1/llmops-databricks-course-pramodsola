@@ -1,5 +1,10 @@
 """Session memory management using Databricks Lakebase (PostgreSQL)."""
 
+from __future__ import annotations
+
+import json
+import urllib.parse
+
 from loguru import logger
 
 
@@ -7,84 +12,66 @@ class LakebaseMemory:
     """Manages conversation session memory using Lakebase (Databricks PostgreSQL).
 
     Stores and retrieves chat messages per session ID using a PostgreSQL table.
-    Uses Databricks token authentication via psycopg.
+    Uses the Lakebase PostgresAPI project/branch/endpoint model for auth.
     """
 
-    def __init__(self, host: str, instance_name: str, port: int = 5432) -> None:
+    def __init__(self, project_id: str) -> None:
         """Initialize LakebaseMemory.
 
         Args:
-            host: Lakebase read/write DNS hostname
-            instance_name: Name of the Lakebase instance
-            port: PostgreSQL port (default 5432)
+            project_id: Lakebase project ID (e.g. 'pramodk-sola-lakebase')
         """
-        self.host = host
-        self.instance_name = instance_name
-        self.port = port
-        self._pool = None
+        self.project_id = project_id
+        self._conn_string: str | None = None
+        self._available = False
         self._setup()
 
-    def _get_token(self) -> str:
-        """Get Databricks auth token from environment or SDK."""
-        import os
-
-        token = os.environ.get("DATABRICKS_TOKEN")
-        if token:
-            return token
+    def _build_conn_string(self) -> str:
+        """Build a fresh PostgreSQL connection string via PostgresAPI."""
         from databricks.sdk import WorkspaceClient
+        from databricks.sdk.service.postgres import PostgresAPI
 
         w = WorkspaceClient()
-        try:
-            from pyspark.sql import SparkSession
+        pg_api = PostgresAPI(w.api_client)
 
-            spark = SparkSession.builder.getOrCreate()
-            dbutils = spark._jvm.com.databricks.dbutils_v1.DBUtilsHolder.dbutils()  # noqa: SIM910
-            return dbutils.notebook().getContext().apiToken().get()
-        except Exception:
-            pass
-        return w.config.token or ""
+        project = pg_api.get_project(name=f"projects/{self.project_id}")
+        default_branch = next(iter(pg_api.list_branches(parent=project.name)))
+        endpoint = next(iter(pg_api.list_endpoints(parent=default_branch.name)))
+        host = endpoint.status.hosts.host
+
+        pg_credential = pg_api.generate_database_credential(endpoint=endpoint.name)
+        user = w.current_user.me()
+        username = urllib.parse.quote_plus(user.user_name)
+
+        return (
+            f"postgresql://{username}:{pg_credential.token}@{host}:5432/"
+            "databricks_postgres?sslmode=require"
+        )
 
     def _setup(self) -> None:
-        """Create connection pool and ensure messages table exists."""
+        """Build connection string and ensure messages table exists."""
         try:
-            import psycopg_pool  # noqa: F401
+            import psycopg
 
-            token = self._get_token()
-            conninfo = (
-                f"host={self.host} "
-                f"port={self.port} "
-                f"dbname=postgres "
-                f"user=token "
-                f"password={token} "
-                f"sslmode=require"
-            )
-            self._pool = psycopg_pool.ConnectionPool(
-                conninfo, min_size=1, max_size=5, open=True
-            )
-            self._create_table()
-            logger.info(f"✓ LakebaseMemory connected to {self.host}")
+            self._conn_string = self._build_conn_string()
+            with psycopg.connect(self._conn_string) as conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS session_messages (
+                        id SERIAL PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        message_data JSONB NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_session_messages_session_id"
+                    " ON session_messages(session_id)"
+                )
+            self._available = True
+            logger.info(f"✓ LakebaseMemory connected to project {self.project_id}")
         except Exception as e:
             logger.warning(f"⚠️ LakebaseMemory setup failed: {type(e).__name__}: {e}")
-            self._pool = None
-
-    def _create_table(self) -> None:
-        """Create messages table if it doesn't exist."""
-        if not self._pool:
-            return
-        with self._pool.connection() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS session_messages (
-                    id SERIAL PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT NOW()
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_session_id"
-                " ON session_messages(session_id)"
-            )
+            self._available = False
 
     def save_messages(self, session_id: str, messages: list[dict]) -> None:
         """Save messages to a session.
@@ -93,15 +80,17 @@ class LakebaseMemory:
             session_id: Unique session identifier
             messages: List of message dicts with 'role' and 'content' keys
         """
-        if not self._pool:
+        if not self._available or not self._conn_string:
             logger.warning("LakebaseMemory not available — messages not persisted")
             return
-        with self._pool.connection() as conn:
+        import psycopg
+
+        with psycopg.connect(self._conn_string) as conn:
             for msg in messages:
                 conn.execute(
-                    "INSERT INTO session_messages"
-                    " (session_id, role, content) VALUES (%s, %s, %s)",
-                    (session_id, msg["role"], msg["content"]),
+                    "INSERT INTO session_messages (session_id, message_data)"
+                    " VALUES (%s, %s)",
+                    (session_id, json.dumps(msg)),
                 )
         logger.debug(f"Saved {len(messages)} messages to session {session_id}")
 
@@ -114,15 +103,17 @@ class LakebaseMemory:
         Returns:
             List of message dicts ordered by creation time
         """
-        if not self._pool:
+        if not self._available or not self._conn_string:
             return []
-        with self._pool.connection() as conn:
+        import psycopg
+
+        with psycopg.connect(self._conn_string) as conn:
             rows = conn.execute(
-                "SELECT role, content FROM session_messages"
+                "SELECT message_data FROM session_messages"
                 " WHERE session_id = %s ORDER BY id",
                 (session_id,),
             ).fetchall()
-        return [{"role": row[0], "content": row[1]} for row in rows]
+        return [json.loads(row[0]) if isinstance(row[0], str) else row[0] for row in rows]
 
     def delete_session(self, session_id: str) -> None:
         """Delete all messages for a session.
@@ -130,9 +121,11 @@ class LakebaseMemory:
         Args:
             session_id: Unique session identifier
         """
-        if not self._pool:
+        if not self._available or not self._conn_string:
             return
-        with self._pool.connection() as conn:
+        import psycopg
+
+        with psycopg.connect(self._conn_string) as conn:
             conn.execute(
                 "DELETE FROM session_messages WHERE session_id = %s",
                 (session_id,),
@@ -140,6 +133,4 @@ class LakebaseMemory:
         logger.info(f"Deleted session: {session_id}")
 
     def close(self) -> None:
-        """Close the connection pool."""
-        if self._pool:
-            self._pool.close()
+        """No-op — connections are closed after each operation."""
