@@ -201,13 +201,13 @@ if hasattr(cfg, 'genie_space_id') and cfg.genie_space_id:
     genie_mcp_url = f"{host}/api/2.0/mcp/genie/{cfg.genie_space_id}"
     logger.info(f"Genie MCP URL:")
     logger.info(genie_mcp_url)
-    
+
     # Connect to Genie MCP
     genie_mcp_client = DatabricksMCPClient(
         server_url=genie_mcp_url,
         workspace_client=w
     )
-    
+
     # List available tools
     try:
         genie_tools = genie_mcp_client.list_tools()
@@ -282,12 +282,12 @@ vector_search_tool_name = f"{cfg.catalog}__{cfg.schema}__arxiv_index"
 
 if vector_search_tool_name in tools_dict:
     search_tool = tools_dict[vector_search_tool_name]
-    
+
     # Execute the tool - only takes 'query' parameter
     result = search_tool.exec_fn(
         query="deep learning architectures"
     )
-    
+
     logger.info("Search Results:")
     logger.info(result)
 
@@ -302,7 +302,7 @@ if vector_search_tool_name in tools_dict:
 if mcp_tools:
     logger.info("Tool Specifications for LLM:")
     logger.info("=" * 80)
-    
+
     for tool in mcp_tools[:2]:  # Show first 2 tools
         logger.info(f"Tool: {tool.name}")
         logger.info(json.dumps(tool.spec, indent=2))
@@ -373,10 +373,10 @@ if mcp_tools:
 
 def test_mcp_connection(mcp_url: str) -> bool:
     """Test if MCP server is accessible.
-    
+
     Args:
         mcp_url: MCP server URL
-        
+
     Returns:
         True if connection successful
     """
@@ -411,7 +411,7 @@ test_mcp_connection(vector_search_mcp_url)
 
 class SimpleAgent:
     """A simple agent that can call tools in a loop."""
-    
+
     def __init__(self, llm_endpoint: str, system_prompt: str, tools: list):
         self.llm_endpoint = llm_endpoint
         self.system_prompt = system_prompt
@@ -420,33 +420,33 @@ class SimpleAgent:
             api_key=dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get(),  # noqa: F821
             base_url=f"{w.config.host}/serving-endpoints"
         )
-    
+
     def get_tool_specs(self) -> list[dict]:
         """Get tool specifications for the LLM."""
         return [tool.spec for tool in self._tools_dict.values()]
-    
+
     def execute_tool(self, tool_name: str, args: dict) -> str:
         """Execute a tool by name."""
         if tool_name not in self._tools_dict:
             raise ValueError(f"Unknown tool: {tool_name}")
         return self._tools_dict[tool_name].exec_fn(**args)
-    
+
     def chat(self, user_message: str, max_iterations: int = 10) -> str:
         """Chat with the agent, allowing tool calls."""
         messages = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_message}
         ]
-        
+
         for iteration in range(max_iterations):
             response = self._client.chat.completions.create(
                 model=self.llm_endpoint,
                 messages=messages,
                 tools=self.get_tool_specs() if self._tools_dict else None,
             )
-            
+
             assistant_message = response.choices[0].message
-            
+
             if assistant_message.tool_calls:
                 # Add assistant message with tool calls (exclude unsupported fields)
                 messages.append({
@@ -464,18 +464,18 @@ class SimpleAgent:
                         for tc in assistant_message.tool_calls
                     ]
                 })
-                
+
                 for tool_call in assistant_message.tool_calls:
                     tool_name = tool_call.function.name
                     tool_args = json.loads(tool_call.function.arguments)
-                    
+
                     logger.info(f"Calling tool: {tool_name}({tool_args})")
-                    
+
                     try:
                         result = self.execute_tool(tool_name, tool_args)
                     except Exception as e:
                         result = f"Error: {str(e)}"
-                    
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
@@ -483,7 +483,7 @@ class SimpleAgent:
                     })
             else:
                 return assistant_message.content
-        
+
         return "Max iterations reached."
 
 # COMMAND ----------

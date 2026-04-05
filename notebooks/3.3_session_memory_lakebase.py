@@ -187,28 +187,28 @@ def chat_with_memory(session_id: str, user_message: str, memory: LakebaseMemory)
     """Chat with LLM using session memory for context."""
     # Load previous messages
     previous_messages = memory.load_messages(session_id)
-    
+
     # Build messages with system prompt
     messages = [
         {"role": "system", "content": "You are a helpful research assistant."}
     ] + previous_messages + [
         {"role": "user", "content": user_message}
     ]
-    
+
     # Call LLM
     response = client.chat.completions.create(
         model=cfg.llm_endpoint,
         messages=messages,
     )
-    
+
     assistant_response = response.choices[0].message.content
-    
+
     # Save new messages to memory
     memory.save_messages(session_id, [
         {"role": "user", "content": user_message},
         {"role": "assistant", "content": assistant_response},
     ])
-    
+
     return assistant_response
 
 logger.info("✓ Chat function with memory created")

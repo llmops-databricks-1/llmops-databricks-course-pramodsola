@@ -118,12 +118,12 @@ vsc = VectorSearchClient(
 
 def calculator(operation: str, a: float, b: float) -> float:
     """Perform basic arithmetic operations.
-    
+
     Args:
         operation: One of 'add', 'subtract', 'multiply', 'divide'
         a: First number
         b: Second number
-        
+
     Returns:
         Result of the operation
     """
@@ -133,10 +133,10 @@ def calculator(operation: str, a: float, b: float) -> float:
         'multiply': lambda x, y: x * y,
         'divide': lambda x, y: x / y if y != 0 else float('inf')
     }
-    
+
     if operation not in operations:
         raise ValueError(f"Unknown operation: {operation}")
-    
+
     return operations[operation](a, b)
 
 # Test the function
@@ -190,34 +190,34 @@ logger.info(json.dumps(calculator_tool_spec, indent=2))
 # Helper function to parse vector search results
 def parse_vector_search_results(results):
     """Parse vector search results from array format to dict format.
-    
+
     Args:
         results: Raw results from similarity_search()
-        
+
     Returns:
         List of dictionaries with column names as keys
     """
     columns = [col['name'] for col in results.get('manifest', {}).get('columns', [])]
     data_array = results.get('result', {}).get('data_array', [])
-    
+
     return [dict(zip(columns, row_data)) for row_data in data_array]
 
 # COMMAND ----------
 
 def search_papers(query: str, num_results: int = 5, year_filter: str = None) -> str:
     """Search for relevant papers using vector search.
-    
+
     Args:
         query: Search query
         num_results: Number of results to return
         year_filter: Optional year filter (e.g., "2024")
-        
+
     Returns:
         JSON string with search results
     """
     index_name = f"{cfg.catalog}.{cfg.schema}.arxiv_index"
     index = vsc.get_index(index_name=index_name)
-    
+
     # Build search parameters
     search_params = {
         "query_text": query,
@@ -225,14 +225,14 @@ def search_papers(query: str, num_results: int = 5, year_filter: str = None) -> 
         "num_results": num_results,
         "query_type": "hybrid"
     }
-    
+
     # Add year filter if provided
     if year_filter:
         search_params["filters"] = {"year": year_filter}
-    
+
     # Perform search
     results = index.similarity_search(**search_params)
-    
+
     # Format results using helper function
     papers = []
     for row in parse_vector_search_results(results):
@@ -243,7 +243,7 @@ def search_papers(query: str, num_results: int = 5, year_filter: str = None) -> 
             "year": row.get("year", "N/A"),
             "excerpt": row.get("text", "")[:200] + "..."
         })
-    
+
     return json.dumps(papers, indent=2)
 
 # Test the function
@@ -324,30 +324,30 @@ logger.info(f"2. {search_papers_tool.name}")
 
 class ToolRegistry:
     """Registry for managing agent tools."""
-    
+
     def __init__(self):
         self._tools: dict[str, ToolInfo] = {}
-    
+
     def register(self, tool: ToolInfo) -> None:
         """Register a tool."""
         self._tools[tool.name] = tool
         logger.info(f"✓ Registered tool: {tool.name}")
-    
+
     def get_tool(self, name: str) -> ToolInfo:
         """Get a tool by name."""
         if name not in self._tools:
             raise ValueError(f"Tool not found: {name}")
         return self._tools[name]
-    
+
     def get_all_specs(self) -> list[dict]:
         """Get all tool specifications."""
         return [tool.spec for tool in self._tools.values()]
-    
+
     def execute(self, name: str, args: dict) -> Any:
         """Execute a tool with arguments."""
         tool = self.get_tool(name)
         return tool.exec_fn(**args)
-    
+
     def list_tools(self) -> list[str]:
         """List all registered tool names."""
         return list(self._tools.keys())
@@ -454,11 +454,11 @@ def test_tool(tool_name: str, test_cases: list[dict]):
     """Test a tool with multiple test cases."""
     logger.info(f"Testing tool: {tool_name}")
     logger.info("=" * 80)
-    
+
     for i, test_case in enumerate(test_cases, 1):
         logger.info(f"Test Case {i}:")
         logger.info(f"  Input: {test_case}")
-        
+
         try:
             result = registry.execute(tool_name, test_case)
             logger.info(f"  ✓ Success")
@@ -484,7 +484,7 @@ test_tool("calculator", [
 
 class SimpleAgent:
     """A simple agent that can call tools in a loop."""
-    
+
     def __init__(self, llm_endpoint: str, system_prompt: str, tools: list[ToolInfo]):
         self.llm_endpoint = llm_endpoint
         self.system_prompt = system_prompt
@@ -493,24 +493,24 @@ class SimpleAgent:
             api_key=dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get(),  # noqa: F821
             base_url=f"{w.config.host}/serving-endpoints"
         )
-    
+
     def get_tool_specs(self) -> list[dict]:
         """Get tool specifications for the LLM."""
         return [tool.spec for tool in self._tools_dict.values()]
-    
+
     def execute_tool(self, tool_name: str, args: dict) -> str:
         """Execute a tool by name."""
         if tool_name not in self._tools_dict:
             raise ValueError(f"Unknown tool: {tool_name}")
         return self._tools_dict[tool_name].exec_fn(**args)
-    
+
     def chat(self, user_message: str, max_iterations: int = 10) -> str:
         """Chat with the agent, allowing tool calls."""
         messages = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_message}
         ]
-        
+
         for iteration in range(max_iterations):
             # Call LLM
             response = self._client.chat.completions.create(
@@ -518,9 +518,9 @@ class SimpleAgent:
                 messages=messages,
                 tools=self.get_tool_specs() if self._tools_dict else None,
             )
-            
+
             assistant_message = response.choices[0].message
-            
+
             # Check if LLM wants to call tools
             if assistant_message.tool_calls:
                 # Add assistant message with tool calls (exclude unsupported fields)
@@ -539,19 +539,19 @@ class SimpleAgent:
                         for tc in assistant_message.tool_calls
                     ]
                 })
-                
+
                 # Execute each tool call
                 for tool_call in assistant_message.tool_calls:
                     tool_name = tool_call.function.name
                     tool_args = json.loads(tool_call.function.arguments)
-                    
+
                     logger.info(f"Calling tool: {tool_name}({tool_args})")
-                    
+
                     try:
                         result = self.execute_tool(tool_name, tool_args)
                     except Exception as e:
                         result = f"Error: {str(e)}"
-                    
+
                     # Add tool result to messages
                     messages.append({
                         "role": "tool",
@@ -561,7 +561,7 @@ class SimpleAgent:
             else:
                 # No tool calls, return the response
                 return assistant_message.content
-        
+
         return "Max iterations reached."
 
 # COMMAND ----------
