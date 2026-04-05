@@ -126,20 +126,24 @@ serialized_space = {
     },
 }
 
-# Check if our personal Genie space already exists
+# Delete existing space if present so it is always recreated with the current warehouse
 existing_spaces = {s.title: s for s in (w.genie.list_spaces().spaces or [])}
 
 if _space_title in existing_spaces:
-    space_id = existing_spaces[_space_title].space_id
-    logger.info(f"✓ Using existing Genie Space: {space_id}")
-else:
-    space = w.genie.create_space(
-        warehouse_id=warehouse_id,
-        serialized_space=json.dumps(serialized_space),
-        title=_space_title,
-    )
-    space_id = space.space_id
-    logger.info(f"✓ Created new Genie Space: {space_id}")
+    old_space_id = existing_spaces[_space_title].space_id
+    try:
+        w.genie.delete_space(space_id=old_space_id)
+        logger.info(f"Deleted existing Genie Space {old_space_id} to recreate with current warehouse")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not delete existing space: {type(e).__name__}: {e}")
+
+space = w.genie.create_space(
+    warehouse_id=warehouse_id,
+    serialized_space=json.dumps(serialized_space),
+    title=_space_title,
+)
+space_id = space.space_id
+logger.info(f"✓ Created Genie Space: {space_id}")
 
 # COMMAND ----------
 
