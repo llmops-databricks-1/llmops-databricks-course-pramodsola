@@ -1,4 +1,13 @@
 # Databricks notebook source
+import subprocess
+import sys
+
+_username = spark.sql("SELECT current_user()").collect()[0][0]  # noqa: F821
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.15.0-py3-none-any.whl"
+subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", _whl, "-q"])
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Lecture 3.4: Session Memory with Lakebase
 # MAGIC
@@ -12,11 +21,18 @@
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.database import DatabaseInstance, DatabaseInstanceState
+from openai import OpenAI
+from pyspark.sql import SparkSession
 from uuid import uuid4
 from loguru import logger
 
 from arxiv_curator.memory import LakebaseMemory
 from arxiv_curator.config import load_config, get_env
+
+# COMMAND ----------
+
+spark = SparkSession.builder.getOrCreate()
+env = get_env(spark)
 
 # COMMAND ----------
 
@@ -32,36 +48,32 @@ from arxiv_curator.config import load_config, get_env
 # COMMAND ----------
 
 w = WorkspaceClient()
-cfg = load_config("../project_config.yml")
+cfg = load_config("../project_config.yml", env)
+_token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()  # noqa: F821
 
 instance_name = "arxiv-agent-instance"
 
 usage_policy_id = cfg.usage_policy_id  # TODO: replace with your usage policy ID
 
 # Create or get existing instance
+from databricks.sdk.errors import NotFound
+
 try:
     instance = w.database.get_database_instance(instance_name)
     logger.info(f"Using existing instance: {instance_name}")
     if instance.state == DatabaseInstanceState.STOPPED:
-        logger.info("Instance is stopped, starting...")
-        instance = w.database.update_database_instance(
-            name=instance_name,
-            database_instance=DatabaseInstance(name=instance_name,
-                                               stopped=False),
-            update_mask="stopped",
-        )
-        instance = w.database.wait_get_database_instance_database_available(instance_name)
-        logger.info("Instance started")
+        logger.warning("Instance is STOPPED — asking admin to start it, or use SPN auth (notebook 3.4)")
     lakebase_host = instance.read_write_dns
-except Exception:
+except NotFound:
     logger.info(f"Creating new instance: {instance_name}")
-    instance = w.database.create_database_instance(
+    wait = w.database.create_database_instance(
         DatabaseInstance(
             name=instance_name, capacity="CU_1",
             usage_policy_id=usage_policy_id
         ),
     )
-    lakebase_host = instance.response.read_write_dns
+    instance = wait.result()
+    lakebase_host = instance.read_write_dns
 
 logger.info(f"Lakebase host: {lakebase_host}")
 
@@ -165,17 +177,9 @@ for msg in full_conversation:
 
 # COMMAND ----------
 
-from openai import OpenAI
-from arxiv_curator.config import load_config, get_env
-from pyspark.sql import SparkSession
-
-spark = SparkSession.builder.getOrCreate()
-env = get_env(spark)
-cfg = load_config("../project_config.yml", env)
-
 # Create OpenAI client for Databricks
 client = OpenAI(
-    api_key=w.tokens.create(lifetime_seconds=1200).token_value,
+    api_key=_token,
     base_url=f"{w.config.host}/serving-endpoints"
 )
 

@@ -1,4 +1,13 @@
 # Databricks notebook source
+import subprocess
+import sys
+
+_username = spark.sql("SELECT current_user()").collect()[0][0]  # noqa: F821
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.15.0-py3-none-any.whl"
+subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", _whl, "-q"])
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Lecture 3.2b: Genie Space Integration
 # MAGIC
@@ -46,52 +55,35 @@ from loguru import logger
 
 w = WorkspaceClient()
 
-# Check if genie_space_id is configured
-if hasattr(cfg, 'genie_space_id') and cfg.genie_space_id:
-    logger.info(f"Using existing Genie Space from config: {cfg.genie_space_id}")
-    space_id = cfg.genie_space_id
-    USE_EXISTING_SPACE = True
-else:
-    logger.info("No Genie Space configured, will create a new one")
-    USE_EXISTING_SPACE = False
+# Derive a personal warehouse/space name from the logged-in user
+# so it doesn't clash with the shared course resources
+_user_prefix = w.current_user.me().user_name.split("@")[0].replace(".", "_")
+_warehouse_name = f"{_user_prefix}_arxiv_warehouse"
+_space_title = f"{_user_prefix}-arxiv-curator-space"
+
+logger.info(f"Personal warehouse name: {_warehouse_name}")
+logger.info(f"Personal Genie space title: {_space_title}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 2. Create SQL Warehouse (if needed)
+# MAGIC ## 2. Create SQL Warehouse
 # MAGIC
-# MAGIC Genie requires a SQL warehouse to execute queries.
-# MAGIC Skip this if using an existing space.
+# MAGIC Create a personal SQL warehouse for your Genie space.
+# MAGIC Scales to 0 when idle so it costs nothing when not in use.
 
 # COMMAND ----------
 
-if not USE_EXISTING_SPACE:
-    # Create a new warehouse for the Genie space
-    created = w.warehouses.create(
-        name="__2XS_arxiv_warehouse",
-        cluster_size="2X-Small",
-        max_num_clusters=1,
-        auto_stop_mins=10,
-        warehouse_type=CreateWarehouseRequestWarehouseType("PRO"),
-        enable_serverless_compute=True,
-        tags=sql.EndpointTags(
-            custom_tags=[sql.EndpointTagPair(key="Project", value="arxiv_curator")]
-        ),
-    ).result()
-    warehouse_id = created.id
-    logger.info(f"Created warehouse: {warehouse_id}")
-else:
-    # Use warehouse from config
-    warehouse_id = cfg.warehouse_id
-    logger.info(f"Using existing warehouse: {warehouse_id}")
+# Use the shared warehouse from config (user doesn't have permission to create new ones)
+warehouse_id = cfg.warehouse_id
+logger.info(f"✓ Using shared warehouse from config: {warehouse_id}")
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## 3. Configure Genie Space
 # MAGIC
-# MAGIC Define which tables and columns Genie can access.
-# MAGIC Skip this if using an existing space.
+# MAGIC Create a personal Genie space pointing at your arxiv_papers table.
 
 # COMMAND ----------
 
@@ -134,16 +126,20 @@ serialized_space = {
     },
 }
 
-if not USE_EXISTING_SPACE:
+# Check if our personal Genie space already exists
+existing_spaces = {s.title: s for s in (w.genie.list_spaces().spaces or [])}
+
+if _space_title in existing_spaces:
+    space_id = existing_spaces[_space_title].space_id
+    logger.info(f"✓ Using existing Genie Space: {space_id}")
+else:
     space = w.genie.create_space(
         warehouse_id=warehouse_id,
         serialized_space=json.dumps(serialized_space),
-        title="arxiv-curator-space",
+        title=_space_title,
     )
     space_id = space.space_id
-    logger.info(f"Created new Genie Space: {space_id}")
-else:
-    logger.info(f"Using existing Genie Space: {space_id}")
+    logger.info(f"✓ Created new Genie Space: {space_id}")
 
 # COMMAND ----------
 
@@ -152,9 +148,14 @@ else:
 
 # COMMAND ----------
 
-space = w.genie.get_space(space_id=space_id, include_serialized_space=True)
-logger.info(f"Genie Space ID: {space_id}")
-logger.info(f"Space config: {json.loads(space.serialized_space)}")
+try:
+    space = w.genie.get_space(space_id=space_id, include_serialized_space=True)
+    logger.info(f"Genie Space ID: {space_id}")
+    if space.serialized_space:
+        logger.info(f"Space config: {json.loads(space.serialized_space)}")
+except Exception as e:
+    logger.warning(f"⚠️ Could not get space details (may need 'Can Edit' permission): {type(e).__name__}")
+    logger.info(f"Genie Space ID: {space_id} — proceeding with conversations anyway")
 
 # COMMAND ----------
 
@@ -165,11 +166,15 @@ logger.info(f"Space config: {json.loads(space.serialized_space)}")
 
 # COMMAND ----------
 
-conversation = w.genie.start_conversation_and_wait(
-    space_id=space.space_id,
-    content="Find the last 10 papers published")
-
-conversation.as_dict()
+try:
+    conversation = w.genie.start_conversation_and_wait(
+        space_id=space_id,
+        content="Find the last 10 papers published")
+    logger.info(f"Conversation started: {conversation.conversation_id}")
+    logger.info(conversation.as_dict())
+except Exception as e:
+    logger.warning(f"⚠️ Genie conversation failed: {type(e).__name__}: {e}")
+    conversation = None
 
 # COMMAND ----------
 
@@ -180,11 +185,16 @@ conversation.as_dict()
 
 # COMMAND ----------
 
-message = w.genie.create_message_and_wait(
-    space_id=space.space_id,
-    conversation_id=conversation.conversation_id,
-    content="Return the list of authors of the last 10 papers published")
-
-message.as_dict()
+if conversation:
+    try:
+        message = w.genie.create_message_and_wait(
+            space_id=space_id,
+            conversation_id=conversation.conversation_id,
+            content="Return the list of authors of the last 10 papers published")
+        logger.info(message.as_dict())
+    except Exception as e:
+        logger.warning(f"⚠️ Genie follow-up message failed: {type(e).__name__}: {e}")
+else:
+    logger.info("Skipping follow-up — no active conversation.")
 
 # COMMAND ----------

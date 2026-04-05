@@ -1,5 +1,22 @@
 # Databricks notebook source
-# DO NOT RUN! For demonstration purposes!
+# MAGIC %md
+# MAGIC # Lecture 3.4: SPN Authentication for Lakebase
+# MAGIC
+# MAGIC ## ⚠️ DO NOT RUN — Demonstration/Reference Only
+# MAGIC
+# MAGIC This notebook shows how an **admin** sets up a Service Principal (SPN)
+# MAGIC with access to the Lakebase PostgreSQL instance.
+# MAGIC Running this requires admin-level credentials and account-level permissions.
+# MAGIC
+# MAGIC ## Topics Covered:
+# MAGIC - Creating a Service Principal on Databricks
+# MAGIC - Storing credentials in Secret Scopes
+# MAGIC - Granting CAN_USE permission on a Lakebase instance
+# MAGIC - Creating a PostgreSQL role for the SPN
+
+# COMMAND ----------
+
+# DO NOT RUN — admin setup only
 from databricks.sdk import WorkspaceClient
 from requests.auth import HTTPBasicAuth
 
