@@ -46,6 +46,11 @@ cfg = load_config("../project_config.yml", env)
 w = WorkspaceClient()
 pg_api = PostgresAPI(w.api_client)
 
+# Derive a personal project ID from the logged-in user so it doesn't clash
+# with the shared course resources (same pattern as Genie notebook)
+_user_prefix = w.current_user.me().user_name.split("@")[0].replace(".", "-")
+project_id = f"{_user_prefix}-lakebase"
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -58,8 +63,6 @@ pg_api = PostgresAPI(w.api_client)
 # MAGIC - Ideal for session state, caching, and metadata
 
 # COMMAND ----------
-
-project_id = cfg.lakebase_project_id
 
 try:
     project = pg_api.get_project(name=f"projects/{project_id}")

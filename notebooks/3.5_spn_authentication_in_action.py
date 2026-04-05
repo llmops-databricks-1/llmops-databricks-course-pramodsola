@@ -63,7 +63,8 @@ logger.info("✓ SPN credentials loaded from secret scope")
 
 # COMMAND ----------
 
-project_id = cfg.lakebase_project_id
+_user_prefix = w.current_user.me().user_name.split("@")[0].replace(".", "-")
+project_id = f"{_user_prefix}-lakebase"
 logger.info(f"Connecting to Lakebase project: {project_id}")
 
 memory = LakebaseMemory(project_id=project_id)
