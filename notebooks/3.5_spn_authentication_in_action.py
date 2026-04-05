@@ -30,6 +30,7 @@ import os
 from uuid import uuid4
 
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.postgres import PostgresAPI
 from loguru import logger
 from pyspark.sql import SparkSession
 
@@ -41,6 +42,7 @@ env = get_env(spark)
 cfg = load_config("../project_config.yml", env)
 
 w = WorkspaceClient()
+pg_api = PostgresAPI(w.api_client)
 
 # COMMAND ----------
 
@@ -63,14 +65,16 @@ logger.info("✓ SPN credentials loaded from secret scope")
 
 # COMMAND ----------
 
-instance_name = "arxiv-agent-instance"
-instance = w.database.get_database_instance(instance_name)
-lakebase_host = instance.read_write_dns
+project_id = "arxiv-agent-lakebase"
+project = pg_api.get_project(name=f"projects/{project_id}")
+default_branch = next(iter(pg_api.list_branches(parent=project.name)))
+endpoint = next(iter(pg_api.list_endpoints(parent=default_branch.name)))
+lakebase_host = endpoint.status.hosts.host
 logger.info(f"Lakebase host: {lakebase_host}")
 
 memory = LakebaseMemory(
     host=lakebase_host,
-    instance_name=instance_name,
+    instance_name=project_id,
 )
 
 # COMMAND ----------
