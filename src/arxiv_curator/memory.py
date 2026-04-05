@@ -1,6 +1,5 @@
 """Session memory management using Databricks Lakebase (PostgreSQL)."""
 
-import json
 from loguru import logger
 
 
@@ -28,18 +27,19 @@ class LakebaseMemory:
     def _get_token(self) -> str:
         """Get Databricks auth token from environment or SDK."""
         import os
+
         token = os.environ.get("DATABRICKS_TOKEN")
         if token:
             return token
         from databricks.sdk import WorkspaceClient
+
         w = WorkspaceClient()
-        # Try runtime token first
         try:
-            from pyspark.dbutils import DBUtils
             from pyspark.sql import SparkSession
+
             spark = SparkSession.builder.getOrCreate()
-            dbutils = DBUtils(spark)
-            return dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()
+            dbutils = spark._jvm.com.databricks.dbutils_v1.DBUtilsHolder.dbutils()  # noqa: SIM910
+            return dbutils.notebook().getContext().apiToken().get()
         except Exception:
             pass
         return w.config.token or ""
@@ -47,8 +47,7 @@ class LakebaseMemory:
     def _setup(self) -> None:
         """Create connection pool and ensure messages table exists."""
         try:
-            import psycopg_pool
-            import psycopg
+            import psycopg_pool  # noqa: F401
 
             token = self._get_token()
             conninfo = (
@@ -59,7 +58,9 @@ class LakebaseMemory:
                 f"password={token} "
                 f"sslmode=require"
             )
-            self._pool = psycopg_pool.ConnectionPool(conninfo, min_size=1, max_size=5, open=True)
+            self._pool = psycopg_pool.ConnectionPool(
+                conninfo, min_size=1, max_size=5, open=True
+            )
             self._create_table()
             logger.info(f"✓ LakebaseMemory connected to {self.host}")
         except Exception as e:
@@ -81,7 +82,8 @@ class LakebaseMemory:
                 )
             """)
             conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_session_id ON session_messages(session_id)"
+                "CREATE INDEX IF NOT EXISTS idx_session_id"
+                " ON session_messages(session_id)"
             )
 
     def save_messages(self, session_id: str, messages: list[dict]) -> None:
@@ -97,8 +99,9 @@ class LakebaseMemory:
         with self._pool.connection() as conn:
             for msg in messages:
                 conn.execute(
-                    "INSERT INTO session_messages (session_id, role, content) VALUES (%s, %s, %s)",
-                    (session_id, msg["role"], msg["content"])
+                    "INSERT INTO session_messages"
+                    " (session_id, role, content) VALUES (%s, %s, %s)",
+                    (session_id, msg["role"], msg["content"]),
                 )
         logger.debug(f"Saved {len(messages)} messages to session {session_id}")
 
@@ -115,8 +118,9 @@ class LakebaseMemory:
             return []
         with self._pool.connection() as conn:
             rows = conn.execute(
-                "SELECT role, content FROM session_messages WHERE session_id = %s ORDER BY id",
-                (session_id,)
+                "SELECT role, content FROM session_messages"
+                " WHERE session_id = %s ORDER BY id",
+                (session_id,),
             ).fetchall()
         return [{"role": row[0], "content": row[1]} for row in rows]
 
@@ -130,7 +134,8 @@ class LakebaseMemory:
             return
         with self._pool.connection() as conn:
             conn.execute(
-                "DELETE FROM session_messages WHERE session_id = %s", (session_id,)
+                "DELETE FROM session_messages WHERE session_id = %s",
+                (session_id,),
             )
         logger.info(f"Deleted session: {session_id}")
 

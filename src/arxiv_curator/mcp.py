@@ -1,7 +1,12 @@
 """Tool definitions for agent tool calling."""
 
+from __future__ import annotations
+
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
+
+from databricks.sdk import WorkspaceClient
 
 
 @dataclass
@@ -13,7 +18,7 @@ class ToolInfo:
     exec_fn: Callable[..., Any]
 
 
-def create_mcp_tools(w: Any, mcp_urls: list[str]) -> list[ToolInfo]:
+def create_mcp_tools(w: WorkspaceClient, mcp_urls: list[str]) -> list[ToolInfo]:
     """Convert MCP server tools into agent-compatible ToolInfo objects.
 
     Args:
@@ -24,6 +29,7 @@ def create_mcp_tools(w: Any, mcp_urls: list[str]) -> list[ToolInfo]:
         List of ToolInfo objects ready for use with an agent
     """
     import logging
+
     from databricks_mcp import DatabricksMCPClient
 
     tools = []
@@ -42,7 +48,8 @@ def create_mcp_tools(w: Any, mcp_urls: list[str]) -> list[ToolInfo]:
                 "function": {
                     "name": mcp_tool.name,
                     "description": mcp_tool.description or "",
-                    "parameters": mcp_tool.inputSchema or {"type": "object", "properties": {}},
+                    "parameters": mcp_tool.inputSchema
+                    or {"type": "object", "properties": {}},
                 },
             }
 
@@ -50,11 +57,9 @@ def create_mcp_tools(w: Any, mcp_urls: list[str]) -> list[ToolInfo]:
             def _make_exec_fn(
                 _client: DatabricksMCPClient, _name: str
             ) -> Callable[..., str]:
-                def exec_fn(**kwargs: Any) -> str:
+                def exec_fn(**kwargs: str) -> str:
                     result = _client.call_tool(_name, kwargs)
-                    return "\n".join(
-                        c.text for c in result.content if hasattr(c, "text")
-                    )
+                    return "\n".join(c.text for c in result.content if hasattr(c, "text"))
 
                 return exec_fn
 
