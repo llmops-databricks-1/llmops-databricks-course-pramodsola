@@ -21,15 +21,22 @@ course-code-hub/
 ├── src/
 │   └── arxiv_curator/
 │       ├── __init__.py
-│       └── config.py            # Pydantic config model + env-aware YAML loader
+│       ├── config.py            # Pydantic config model + env-aware YAML loader
+│       ├── data_processor.py    # Download, parse, and chunk arXiv papers  ← Week 2
+│       └── vector_search.py     # Vector search endpoint + index management ← Week 2
 ├── notebooks/
-│   ├── 1.1_foundation_models_overview.py     # Explore model access types & pricing
-│   ├── 1.2_provisioned_throughput_deployment.py  # Deploy dedicated LLM endpoint
-│   ├── 1.3_arxiv_data_ingestion.py           # Ingest papers → Delta table
-│   └── 1.4_external_models_custom_provider.py    # DALL-E via External Models API
+│   ├── 1.1_foundation_models_overview.py          # Explore model access types & pricing
+│   ├── 1.2_provisioned_throughput_deployment.py   # Deploy dedicated LLM endpoint
+│   ├── 1.3_arxiv_data_ingestion.py                # Ingest papers → Delta table
+│   ├── 1.4_external_models_custom_provider.py     # DALL-E via External Models API
+│   ├── 2.1_context_engineering_theory.py          # RAG theory & query strategies   ← Week 2
+│   ├── 2.2_pdf_parsing_ai_parse.py                # PDF parsing with ai_parse_document ← Week 2
+│   ├── 2.3_chunking_strategies.py                 # Chunking & text cleaning         ← Week 2
+│   └── 2.4_embeddings_vector_search.py            # Vector index & semantic search   ← Week 2
 ├── resources/
-│   ├── arxiv_data_ingestion_job.yml          # Bundle job for notebook 1.3
-│   └── external_models_custom_provider_job.yml   # Bundle job for notebook 1.4
+│   ├── arxiv_data_ingestion_job.yml               # Bundle job for notebook 1.3
+│   ├── external_models_custom_provider_job.yml    # Bundle job for notebook 1.4
+│   └── 2_4_embeddings_vector_search_job.yml       # Bundle job for notebook 2.4     ← Week 2
 ├── tests/
 ├── databricks.yml               # Databricks Asset Bundle root config
 ├── project_config.yml           # Per-environment settings (dev / acc / prd)
@@ -75,6 +82,62 @@ dev:
 | **Pydantic** | Config validation via `ProjectConfig` model |
 | **Loguru** | Structured logging across all notebooks |
 | **uv** | Dependency management and tool runner |
+
+---
+
+## Week 2 — Context Engineering, RAG & Vector Search
+
+Week 2 extends the pipeline from data ingestion (Week 1) into a full RAG system: parsed documents, clean text chunks, and a searchable vector index.
+
+### What Was Built
+
+#### `DataProcessor` (`src/arxiv_curator/data_processor.py`)
+End-to-end processing class that runs three stages:
+1. **Download** — fetches arXiv PDFs via the arXiv API and uploads them to a Unity Catalog Volume using `WorkspaceClient.files.upload()`
+2. **Parse** — uses Databricks' `ai_parse_document()` SQL function to extract structured content from each PDF; results stored in `ai_parsed_docs_table`
+3. **Chunk** — explodes the parsed JSON into individual text chunks, cleans them (fixes hyphenation, collapses whitespace), joins with paper metadata, and writes to `arxiv_chunks_table` with **Change Data Feed** enabled for downstream sync
+
+#### `VectorSearchManager` (`src/arxiv_curator/vector_search.py`)
+Manages the Databricks Vector Search lifecycle:
+- Creates the vector search endpoint if it doesn't exist (`llmops_course_vs_endpoint`)
+- Creates a **Delta Sync index** (`arxiv_index`) backed by `arxiv_chunks_table` using `databricks-gte-large-en` for embeddings
+- Handles index sync and exposes `search()` for similarity queries
+
+### Notebooks
+
+| Notebook | What It Covers |
+|----------|---------------|
+| **2.1 Context Engineering Theory** | Why RAG exists, context window limits, query rewriting, the "lost in the middle" problem, context ordering strategies |
+| **2.2 PDF Parsing with AI Parse** | PDF parsing tool comparison, downloading arXiv PDFs to Volumes, `ai_parse_document`, storing parsed JSON in Delta |
+| **2.3 Chunking Strategies** | Fixed-size vs semantic chunking, overlap strategies, text cleaning, joining chunks with paper metadata |
+| **2.4 Embeddings & Vector Search** | Embedding models, creating vector indexes, similarity search, hybrid search (semantic + BM25), reranking with `DatabricksReranker` |
+
+### Full RAG Pipeline
+
+```
+arXiv API
+    ↓  download_and_store_papers()
+PDFs in Unity Catalog Volume + arxiv_papers table
+    ↓  parse_pdfs_with_ai()
+ai_parsed_docs_table (structured JSON)
+    ↓  process_chunks()
+arxiv_chunks_table (clean text + metadata, CDF enabled)
+    ↓  VectorSearchManager
+Vector Search Index (embeddings via databricks-gte-large-en)
+    ↓  similarity_search / hybrid / reranked
+Query Results
+```
+
+### New Tools & Technologies (Week 2)
+
+| Tool | Purpose |
+|------|---------|
+| **Databricks `ai_parse_document()`** | AI-powered PDF parsing that handles multi-column layouts, tables, and complex structure |
+| **Databricks Vector Search** | Managed ANN index with automatic embedding generation and Delta Sync |
+| **`databricks-gte-large-en`** | Embedding model (1024 dimensions) used for semantic search |
+| **`DatabricksReranker`** | Cross-encoder reranking for higher-precision retrieval |
+| **Change Data Feed (CDF)** | Delta Lake feature that tracks row-level changes; required for continuous vector index sync |
+| **Spark UDFs** | Distributed text processing (chunk extraction, cleaning) via PySpark |
 
 ---
 
