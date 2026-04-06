@@ -3,7 +3,7 @@ import subprocess
 import sys
 
 _username = spark.sql("SELECT current_user()").collect()[0][0]  # noqa: F821
-_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.17.0-py3-none-any.whl"
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.18.0-py3-none-any.whl"
 subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", _whl, "-q"])
 
 # COMMAND ----------
