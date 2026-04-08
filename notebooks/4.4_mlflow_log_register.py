@@ -156,6 +156,14 @@ test_request = {
     },
 }
 
+# Infer model signature from a sample prediction (required by Unity Catalog)
+_sample_response = agent.predict(context=None, model_input=test_request)
+signature = mlflow.models.infer_signature(
+    model_input=test_request,
+    model_output=_sample_response.model_dump(),
+)
+logger.info("✓ Model signature inferred")
+
 ts = datetime.now().strftime("%Y-%m-%d")
 with mlflow.start_run(
     run_name=f"arxiv-agent-{ts}",
@@ -166,6 +174,7 @@ with mlflow.start_run(
         python_model="../arxiv_agent.py",  # code-based logging (mlflow 3.x)
         resources=resources,
         input_example=test_request,
+        signature=signature,
         model_config=model_config,
     )
     mlflow.log_metrics(results.metrics)
