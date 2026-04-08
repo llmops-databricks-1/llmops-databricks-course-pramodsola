@@ -38,8 +38,7 @@ from pyspark.sql import SparkSession
 from arxiv_curator.agent import ArxivAgent
 from arxiv_curator.config import ProjectConfig, get_env, load_config
 from arxiv_curator.evaluation import (
-    hook_in_post_guideline,
-    polite_tone_guideline,
+    mentions_papers,
     word_count_check,
 )
 
@@ -103,7 +102,7 @@ def predict_fn(question: str) -> str:
 results = mlflow.genai.evaluate(
     predict_fn=predict_fn,
     data=eval_data,
-    scorers=[word_count_check, polite_tone_guideline, hook_in_post_guideline],
+    scorers=[word_count_check, mentions_papers],  # code-only scorers for fast eval
 )
 logger.info("✓ Evaluation complete")
 logger.info(f"Metrics: {results.metrics}")
