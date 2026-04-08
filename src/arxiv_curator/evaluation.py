@@ -5,7 +5,6 @@ from __future__ import annotations
 import mlflow
 from mlflow.genai.judges import Guidelines
 
-
 polite_tone_guideline = Guidelines(
     name="polite_tone",
     guidelines=[

@@ -5,11 +5,11 @@ from __future__ import annotations
 import random
 from collections.abc import Iterator
 from datetime import datetime
-from typing import Any
 
 import mlflow
 from databricks.sdk import WorkspaceClient
 from mlflow.entities import SpanType
+from mlflow.pyfunc import PythonModelContext
 from mlflow.types.responses import (
     ResponsesAgentRequest,
     ResponsesAgentResponse,
@@ -19,7 +19,6 @@ from openai import OpenAI
 
 from arxiv_curator.mcp import ToolInfo, create_mcp_tools
 from arxiv_curator.memory import LakebaseMemory
-
 
 GIT_SHA = "local"
 
@@ -47,9 +46,26 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
         self.tools: list[ToolInfo] = self._load_tools()
         self.memory: LakebaseMemory | None = self._init_memory()
         self.client = OpenAI(
-            api_key=self.w.config.token or "",
+            api_key=self._get_token(),
             base_url=f"{self.w.config.host.rstrip('/')}/serving-endpoints",
         )
+
+    def _get_token(self) -> str:
+        """Get Databricks auth token — works in both serverless and classic clusters."""
+        import os
+
+        token = os.environ.get("DATABRICKS_TOKEN")
+        if token:
+            return token
+        try:
+            from pyspark.sql import SparkSession
+
+            spark = SparkSession.builder.getOrCreate()
+            dbutils = spark._jvm.com.databricks.dbutils_v1.DBUtilsHolder.dbutils()  # noqa: SIM910
+            return dbutils.notebook().getContext().apiToken().get()
+        except Exception:
+            pass
+        return self.w.config.token or ""
 
     def _load_tools(self) -> list[ToolInfo]:
         """Load MCP tools from Vector Search and Genie."""
@@ -74,7 +90,7 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
             return None
 
     @mlflow.trace(span_type=SpanType.TOOL)
-    def execute_tool(self, tool_name: str, args: dict[str, Any]) -> str:
+    def execute_tool(self, tool_name: str, args: dict[str, str]) -> str:
         """Execute a named tool and return its string output."""
         for tool in self.tools:
             if tool.name == tool_name:
@@ -82,10 +98,10 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
         return f"Tool '{tool_name}' not found."
 
     @mlflow.trace(span_type=SpanType.LLM)
-    def call_llm(self, messages: list[dict]) -> Any:
+    def call_llm(self, messages: list[dict]) -> object:
         """Call the LLM with the current message list."""
         tool_specs = [t.spec for t in self.tools] if self.tools else []
-        kwargs: dict[str, Any] = {
+        kwargs: dict[str, object] = {
             "model": self.llm_endpoint,
             "messages": messages,
         }
@@ -94,9 +110,7 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
         return self.client.chat.completions.create(**kwargs)
 
     @mlflow.trace(span_type=SpanType.CHAIN)
-    def call_and_run_tools(
-        self, messages: list[dict], max_iterations: int = 5
-    ) -> str:
+    def call_and_run_tools(self, messages: list[dict], max_iterations: int = 5) -> str:
         """Agentic loop: call LLM, execute tool calls, repeat until done."""
         for _ in range(max_iterations):
             response = self.call_llm(messages)
@@ -125,9 +139,9 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
     @mlflow.trace(span_type=SpanType.AGENT)
     def predict(
         self,
-        context: Any,
+        context: PythonModelContext | None,
         model_input: ResponsesAgentRequest | dict,
-        params: Any = None,
+        params: dict | None = None,
     ) -> ResponsesAgentResponse:
         """Handle a single agent request with full tracing."""
         if isinstance(model_input, dict):
@@ -135,8 +149,10 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
 
         # Extract custom inputs
         custom = model_input.custom_inputs or {}
-        session_id: str = custom.get("session_id", f"s-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(100000, 999999)}")
-        request_id: str = custom.get("request_id", f"req-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(100000, 999999)}")
+        _ts = datetime.now().strftime("%Y%m%d%H%M%S")
+        _rnd = random.randint(100000, 999999)
+        session_id: str = custom.get("session_id", f"s-{_ts}-{_rnd}")
+        request_id: str = custom.get("request_id", f"req-{_ts}-{_rnd}")
 
         # Attach trace metadata
         mlflow.update_current_trace(
@@ -188,9 +204,9 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
 
     def predict_stream(
         self,
-        context: Any,
+        context: PythonModelContext | None,
         model_input: ResponsesAgentRequest | dict,
-        params: Any = None,
+        params: dict | None = None,
     ) -> Iterator[ResponsesAgentStreamEvent]:
         """Streaming predict — yields a single event with the full response."""
         response = self.predict(context, model_input, params)
