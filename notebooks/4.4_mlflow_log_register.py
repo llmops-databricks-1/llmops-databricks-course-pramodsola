@@ -59,12 +59,13 @@ _user_prefix = w.current_user.me().user_name.split("@")[0].replace(".", "-")
 
 # COMMAND ----------
 
+# Use Vector Search only for evaluation (no Genie) to keep eval fast
 agent = ArxivAgent(
     llm_endpoint=cfg.llm_endpoint,
     system_prompt=cfg.system_prompt,
     catalog=cfg.catalog,
     schema=cfg.schema,
-    genie_space_id=cfg.genie_space_id,
+    genie_space_id=None,
     lakebase_project_id=f"{_user_prefix}-lakebase",
 )
 logger.info("✓ ArxivAgent initialized")
@@ -81,7 +82,7 @@ with open("../eval_inputs.txt") as f:
         {"inputs": {"question": line.strip()}}
         for line in f
         if line.strip()
-    ]
+    ][:3]  # Limit to 3 questions for a fast evaluation run
 
 logger.info(f"✓ Loaded {len(eval_data)} evaluation questions")
 
