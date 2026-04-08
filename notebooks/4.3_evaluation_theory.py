@@ -3,7 +3,7 @@ import subprocess
 import sys
 
 _username = spark.sql("SELECT current_user()").collect()[0][0]  # noqa: F821
-_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.22.0-py3-none-any.whl"
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.23.0-py3-none-any.whl"
 subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", _whl, "-q"])
 
 # COMMAND ----------
@@ -68,9 +68,9 @@ mlflow.set_experiment(cfg.experiment_name)
 # COMMAND ----------
 
 logger.info("Scorers available:")
-logger.info(f"  polite_tone_guideline — {len(polite_tone_guideline.guidelines)} rules")
-logger.info(f"  hook_in_post_guideline — {len(hook_in_post_guideline.guidelines)} rules")
-logger.info(f"  scope_guideline — {len(scope_guideline.guidelines)} rules")
+logger.info(f"  polite_tone_guideline — judge: {polite_tone_guideline.name}")
+logger.info(f"  hook_in_post_guideline — judge: {hook_in_post_guideline.name}")
+logger.info(f"  scope_guideline — judge: {scope_guideline.name}")
 logger.info("  word_count_check — custom scorer (boolean, <350 words)")
 logger.info("  mentions_papers — custom scorer (boolean)")
 
@@ -205,7 +205,9 @@ comprehensive_results = mlflow.genai.evaluate(
     data=comprehensive_data, scorers=all_scorers
 )
 logger.info("Comprehensive evaluation results:")
-display(comprehensive_results.tables["eval_results"])  # noqa: F821
+logger.info(f"Metrics: {comprehensive_results.metrics}")
+_df = comprehensive_results.tables["eval_results"].astype(str)
+display(_df)  # noqa: F821
 
 # COMMAND ----------
 

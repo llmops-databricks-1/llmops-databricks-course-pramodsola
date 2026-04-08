@@ -3,32 +3,35 @@
 from __future__ import annotations
 
 import mlflow
-from mlflow.genai.judges import Guidelines
+from mlflow.genai.judges import make_judge
 
-polite_tone_guideline = Guidelines(
+polite_tone_guideline = make_judge(
     name="polite_tone",
-    guidelines=[
-        "The response must be polite and professional.",
-        "The response must not be rude, dismissive, or condescending.",
-        "The response must address the user's question directly.",
-    ],
+    instructions=(
+        "Check if {{ outputs }} meets all guidelines:\n"
+        "- The response must be polite and professional.\n"
+        "- The response must not be rude, dismissive, or condescending.\n"
+        "- The response must address the user's question directly."
+    ),
 )
 
-hook_in_post_guideline = Guidelines(
+hook_in_post_guideline = make_judge(
     name="hook_in_post",
-    guidelines=[
-        "The response must start with an engaging opening sentence.",
-        "The opening must clearly signal what the response is about.",
-    ],
+    instructions=(
+        "Check if {{ outputs }} meets all guidelines:\n"
+        "- The response must start with an engaging opening sentence.\n"
+        "- The opening must clearly signal what the response is about."
+    ),
 )
 
-scope_guideline = Guidelines(
+scope_guideline = make_judge(
     name="scope",
-    guidelines=[
-        "The response must stay on topic and answer the user's question.",
-        "The response must not include unrelated information.",
-        "The response must be relevant to AI/ML research papers.",
-    ],
+    instructions=(
+        "Check if {{ outputs }} meets all guidelines:\n"
+        "- The response must stay on topic and answer the user's question.\n"
+        "- The response must not include unrelated information.\n"
+        "- The response must be relevant to AI/ML research papers."
+    ),
 )
 
 
