@@ -58,7 +58,7 @@ dev:
   vector_search_endpoint: llmops_course_vs_endpoint
   genie_space_id: ...
   lakebase_project_id: your-name-lakebase
-  experiment_name: /Shared/llmops-course-demo
+  experiment_name: /Shared/llmops-course-pramodsola  # personal experiment, one per student
 ```
 
 ---
