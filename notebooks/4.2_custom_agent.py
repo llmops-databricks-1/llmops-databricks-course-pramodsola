@@ -3,7 +3,7 @@ import subprocess
 import sys
 
 _username = spark.sql("SELECT current_user()").collect()[0][0]  # noqa: F821
-_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.21.0-py3-none-any.whl"
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.22.0-py3-none-any.whl"
 subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", _whl, "-q"])
 
 # COMMAND ----------
@@ -105,7 +105,7 @@ request = ResponsesAgentRequest(
 logger.info(f"Session ID: {session_id}")
 
 response = agent.predict(context=None, model_input=request)
-logger.info(f"Agent: {response.output[-1]['content'][:300]}...")
+logger.info(f"Agent: {response.output[-1]['content'][0]['text'][:300]}...")
 logger.info("✓ Trace created — check MLflow UI.")
 
 # COMMAND ----------
@@ -125,7 +125,7 @@ req1 = ResponsesAgentRequest(
 )
 resp1 = agent.predict(context=None, model_input=req1)
 logger.info(f"Turn 1 — User: What is RAG in LLMs?")
-logger.info(f"Turn 1 — Agent: {resp1.output[-1]['content'][:200]}...")
+logger.info(f"Turn 1 — Agent: {resp1.output[-1]['content'][0]['text'][:200]}...")
 
 # COMMAND ----------
 
@@ -133,14 +133,14 @@ logger.info(f"Turn 1 — Agent: {resp1.output[-1]['content'][:200]}...")
 req2 = ResponsesAgentRequest(
     input=[
         {"role": "user", "content": "What is RAG in LLMs?"},
-        {"role": "assistant", "content": resp1.output[-1]["content"]},
+        {"role": "assistant", "content": resp1.output[-1]['content'][0]['text']},
         {"role": "user", "content": "What are the main components?"},
     ],
     custom_inputs={"session_id": conv_session, "request_id": f"req-2-{uuid4().hex[:8]}"},
 )
 resp2 = agent.predict(context=None, model_input=req2)
 logger.info(f"Turn 2 — User: What are the main components?")
-logger.info(f"Turn 2 — Agent: {resp2.output[-1]['content'][:200]}...")
+logger.info(f"Turn 2 — Agent: {resp2.output[-1]['content'][0]['text'][:200]}...")
 logger.info(f"✓ Multi-turn conversation traced with session: {conv_session}")
 
 # COMMAND ----------

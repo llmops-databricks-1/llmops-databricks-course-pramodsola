@@ -3,7 +3,7 @@ import subprocess
 import sys
 
 _username = spark.sql("SELECT current_user()").collect()[0][0]  # noqa: F821
-_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.21.0-py3-none-any.whl"
+_whl = f"/Workspace/Users/{_username}/.bundle/dev/course-code-hub/artifacts/.internal/arxiv_curator-0.22.0-py3-none-any.whl"
 subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", _whl, "-q"])
 
 # COMMAND ----------
@@ -90,7 +90,7 @@ def predict_fn(question: str) -> str:
     """Wrap agent for mlflow.genai.evaluate."""
     request = {"input": [{"role": "user", "content": question}]}
     result = agent.predict(context=None, model_input=request)
-    return result.output[-1]["content"]
+    return result.output[-1]['content'][0]['text']
 
 # COMMAND ----------
 

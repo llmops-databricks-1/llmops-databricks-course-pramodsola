@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 from collections.abc import Iterator
 from datetime import datetime
+from uuid import uuid4
 
 import mlflow
 from databricks.sdk import WorkspaceClient
@@ -194,9 +195,17 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
         return ResponsesAgentResponse(
             output=[
                 {
-                    "role": "assistant",
-                    "content": assistant_response,
                     "type": "message",
+                    "id": str(uuid4()),
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": assistant_response,
+                            "annotations": [],
+                        }
+                    ],
                 }
             ]
         )
