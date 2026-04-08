@@ -51,21 +51,20 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
         )
 
     def _get_token(self) -> str:
-        """Get Databricks auth token — works in both serverless and classic clusters."""
+        """Get Databricks auth token — works in serverless and classic clusters."""
         import os
 
+        # 1. Explicit env var (CI, local dev)
         token = os.environ.get("DATABRICKS_TOKEN")
         if token:
             return token
+        # 2. Databricks serverless: use SDK config which picks up OAuth credentials
         try:
-            from pyspark.sql import SparkSession
-
-            spark = SparkSession.builder.getOrCreate()
-            dbutils = spark._jvm.com.databricks.dbutils_v1.DBUtilsHolder.dbutils()  # noqa: SIM910
-            return dbutils.notebook().getContext().apiToken().get()
+            headers = self.w.config.authenticate()
+            return headers.get("Authorization", "").removeprefix("Bearer ")
         except Exception:
             pass
-        return self.w.config.token or ""
+        return ""
 
     def _load_tools(self) -> list[ToolInfo]:
         """Load MCP tools from Vector Search and Genie."""
