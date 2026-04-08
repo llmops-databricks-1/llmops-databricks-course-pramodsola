@@ -107,7 +107,7 @@ results = mlflow.genai.evaluate(
 )
 logger.info("✓ Evaluation complete")
 logger.info(f"Metrics: {results.metrics}")
-display(results.tables["eval_results"])  # noqa: F821
+display(results.tables["eval_results"].astype(str))  # noqa: F821
 
 # COMMAND ----------
 
