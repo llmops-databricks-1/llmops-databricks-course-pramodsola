@@ -1,21 +1,33 @@
-"""MLflow pyfunc entry point for the ArxivAgent model."""
+"""MLflow pyfunc entry point for the ArxivAgent model (code-based logging)."""
 
 from __future__ import annotations
+
+import mlflow
 
 from arxiv_curator.agent import ArxivAgent
 
 
-def load_context(context: object) -> ArxivAgent:  # type: ignore[return]
-    """Load and return the ArxivAgent from model config."""
-    import mlflow
+class _AgentLoader(mlflow.pyfunc.PythonModel):
+    """Lazy-loading wrapper so ArxivAgent is only instantiated at serve time."""
 
-    model_config = mlflow.models.ModelConfig(development_config="project_config.yml")
+    def load_context(self, context: object) -> None:
+        config = mlflow.models.ModelConfig(development_config="project_config.yml")
+        self._agent = ArxivAgent(
+            llm_endpoint=config.get("llm_endpoint"),
+            system_prompt=config.get("system_prompt"),
+            catalog=config.get("catalog"),
+            schema=config.get("schema"),
+            genie_space_id=config.get("genie_space_id"),
+            lakebase_project_id=config.get("lakebase_project_id"),
+        )
 
-    return ArxivAgent(
-        llm_endpoint=model_config.get("llm_endpoint"),
-        system_prompt=model_config.get("system_prompt"),
-        catalog=model_config.get("catalog"),
-        schema=model_config.get("schema"),
-        genie_space_id=model_config.get("genie_space_id"),
-        lakebase_project_id=model_config.get("lakebase_project_id"),
-    )
+    def predict(
+        self,
+        context: object,
+        model_input: object,
+        params: dict | None = None,
+    ) -> object:
+        return self._agent.predict(context, model_input, params)
+
+
+mlflow.models.set_model(_AgentLoader())
