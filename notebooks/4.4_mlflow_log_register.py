@@ -163,7 +163,7 @@ with mlflow.start_run(
 ) as run:
     model_info = mlflow.pyfunc.log_model(
         name="agent",
-        python_model=agent,  # Pass instance directly (mlflow 3.x code-path)
+        python_model="../arxiv_agent.py",  # code-based logging (mlflow 3.x)
         resources=resources,
         input_example=test_request,
         model_config=model_config,
