@@ -136,8 +136,14 @@ logger.info(f"✓ Declared {len(resources)} Databricks resources")
 
 # COMMAND ----------
 
-git_sha = dbutils.widgets.get("git_sha") if dbutils.widgets.get("git_sha") != "" else "local"  # noqa: F821
-run_id = dbutils.widgets.get("run_id") if dbutils.widgets.get("run_id") != "" else "local"  # noqa: F821
+try:
+    git_sha = dbutils.widgets.get("git_sha") or "local"  # noqa: F821
+except Exception:
+    git_sha = "local"
+try:
+    run_id = dbutils.widgets.get("run_id") or "local"  # noqa: F821
+except Exception:
+    run_id = "local"
 
 model_config = {
     "catalog": cfg.catalog,
