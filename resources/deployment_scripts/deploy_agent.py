@@ -17,7 +17,7 @@ secret_scope = "arxiv-agent-scope"
 cfg = load_config("../../project_config.yml", env=env)
 
 model_name = f"{cfg.catalog}.{cfg.schema}.arxiv_agent"
-endpoint_name = f"arxiv-agent-endpoint-{env}-course"
+endpoint_name = f"arxiv-agent-pramodsola-{env}"
 
 client = MlflowClient()
 model_version = client.get_model_version_by_alias(model_name, "latest-model").version

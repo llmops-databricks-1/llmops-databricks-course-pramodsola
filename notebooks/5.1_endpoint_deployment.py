@@ -43,7 +43,7 @@ w = WorkspaceClient()
 client = MlflowClient()
 
 model_name = f"{cfg.catalog}.{cfg.schema}.arxiv_agent"
-endpoint_name = f"arxiv-agent-endpoint-{env}-course"
+endpoint_name = f"arxiv-agent-pramodsola-{env}"
 secret_scope = "arxiv-agent-scope"
 
 logger.info(f"Model: {model_name}")
