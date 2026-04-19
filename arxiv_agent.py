@@ -16,11 +16,10 @@ class _AgentLoader(mlflow.pyfunc.PythonModel):
     """Lazy-loading wrapper — ArxivAgent is created on first predict() call."""
 
     def load_context(self, context):
-        # Store config only — do NOT instantiate ArxivAgent here.
-        # If ArxivAgent.__init__ raises, the container silently marks deployment
-        # as failed with no traceable error. Deferring to predict() lets errors
-        # surface in MLflow traces.
-        self._config = mlflow.models.ModelConfig(development_config="project_config.yml")
+        # context.model_config is the dict passed to log_model(model_config=...)
+        # and is always available in model serving — unlike ModelConfig() which
+        # looks for project_config.yml on disk (absent in the serving container).
+        self._model_config = context.model_config or {}
         self._agent = None
 
     def _ensure_agent(self):
@@ -30,12 +29,12 @@ class _AgentLoader(mlflow.pyfunc.PythonModel):
         from arxiv_curator.agent import ArxivAgent  # noqa: PLC0415
 
         self._agent = ArxivAgent(
-            llm_endpoint=self._config.get("llm_endpoint"),
-            system_prompt=self._config.get("system_prompt"),
-            catalog=self._config.get("catalog"),
-            schema=self._config.get("schema"),
-            genie_space_id=self._config.get("genie_space_id"),
-            lakebase_project_id=self._config.get("lakebase_project_id"),
+            llm_endpoint=self._model_config.get("llm_endpoint"),
+            system_prompt=self._model_config.get("system_prompt"),
+            catalog=self._model_config.get("catalog"),
+            schema=self._model_config.get("schema"),
+            genie_space_id=self._model_config.get("genie_space_id"),
+            lakebase_project_id=self._model_config.get("lakebase_project_id"),
         )
 
     def predict(self, context, model_input, params=None):
