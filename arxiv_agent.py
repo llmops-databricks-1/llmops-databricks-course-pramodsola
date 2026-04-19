@@ -15,14 +15,14 @@ import mlflow
 class _AgentLoader(mlflow.pyfunc.PythonModel):
     """Lazy-loading wrapper — ArxivAgent is created on first predict() call."""
 
-    def load_context(self, context):
+    def load_context(self, context: mlflow.pyfunc.PythonModelContext) -> None:
         # context.model_config is the dict passed to log_model(model_config=...)
         # and is always available in model serving — unlike ModelConfig() which
         # looks for project_config.yml on disk (absent in the serving container).
         self._model_config = context.model_config or {}
         self._agent = None
 
-    def _ensure_agent(self):
+    def _ensure_agent(self) -> None:
         if self._agent is not None:
             return
         # Deferred import — keeps module-level clean of ResponsesAgentRequest
@@ -37,10 +37,13 @@ class _AgentLoader(mlflow.pyfunc.PythonModel):
             lakebase_project_id=self._model_config.get("lakebase_project_id"),
         )
 
-    def predict(self, context, model_input, params=None):
-        # No type annotations — MLflow must use the explicit signature from log_model.
-        # Returns ChatCompletionResponse format so agents.deploy() output schema check passes.
-        #
+    def predict(  # noqa: ANN202
+        self,
+        context: mlflow.pyfunc.PythonModelContext,  # type: ignore[override]
+        model_input,  # noqa: ANN001 — no annotation keeps MLflow from overriding signature
+        params=None,  # noqa: ANN001
+    ):
+        # Returns ChatCompletionResponse format so agents.deploy() schema check passes.
         # MLflow serving passes a pandas DataFrame; convert to dict so ArxivAgent
         # can handle it (it checks isinstance(model_input, dict)).
         import time

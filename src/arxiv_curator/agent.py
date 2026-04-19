@@ -13,7 +13,6 @@ from loguru import logger
 from mlflow import MlflowClient
 from mlflow.entities import SpanType
 from mlflow.models.resources import (
-    DatabricksGenieSpace,
     DatabricksServingEndpoint,
     DatabricksSQLWarehouse,
     DatabricksTable,
@@ -57,7 +56,10 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
         try:
             self.tools: list[ToolInfo] = self._load_tools()
         except Exception as e:
-            logger.error(f"Tool loading failed — agent will run without tools: {type(e).__name__}: {e}")
+            logger.error(
+                f"Tool loading failed — agent will run without tools: "
+                f"{type(e).__name__}: {e}"
+            )
             self.tools = []
         self.memory: LakebaseMemory | None = self._init_memory()
         self.client = OpenAI(
@@ -281,7 +283,12 @@ def log_register_agent(
     }
 
     test_request = {
-        "messages": [{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}]
+        "messages": [
+            {
+                "role": "user",
+                "content": "What are recent papers about LLMs and reasoning?",
+            }
+        ]
     }
     test_response = {
         "id": "chatcmpl-example",
@@ -298,7 +305,9 @@ def log_register_agent(
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
 
-    signature = mlflow.models.infer_signature(model_input=test_request, model_output=test_response)
+    signature = mlflow.models.infer_signature(
+        model_input=test_request, model_output=test_response
+    )
 
     mlflow.set_experiment(cfg.experiment_name)
     ts = datetime.now().strftime("%Y-%m-%d")
