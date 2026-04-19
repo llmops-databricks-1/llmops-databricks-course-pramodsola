@@ -137,6 +137,9 @@ logger.info("Wait 5–10 minutes for the endpoint to become ready, then run the 
 
 # COMMAND ----------
 
+# NOTE: Run this cell MANUALLY after the endpoint shows "Ready" in the Serving UI.
+# Deployment takes 5–10 minutes — running immediately will get a 404.
+
 host = w.config.host
 token = w.tokens.create(lifetime_seconds=2000).token_value
 
@@ -145,18 +148,25 @@ openai_client = OpenAI(
     base_url=f"{host}/serving-endpoints",
 )
 
-timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-session_id = f"s-{timestamp}-{random.randint(100000, 999999)}"
-request_id = f"req-{timestamp}-{random.randint(100000, 999999)}"
+# Check endpoint is ready before calling it
+from databricks.sdk.service.serving import EndpointStateReady
 
-response = openai_client.chat.completions.create(
-    model=endpoint_name,
-    messages=[{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}],
-)
+endpoint_state = w.serving_endpoints.get(endpoint_name).state
+if endpoint_state.ready != EndpointStateReady.READY:
+    logger.warning(f"Endpoint not ready yet (state={endpoint_state.ready}). Wait and re-run this cell.")
+else:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    session_id = f"s-{timestamp}-{random.randint(100000, 999999)}"
+    request_id = f"req-{timestamp}-{random.randint(100000, 999999)}"
 
-logger.info(f"Session ID: {session_id}")
-logger.info(f"Request ID: {request_id}")
-logger.info("\nAssistant Response:")
-logger.info("-" * 80)
-logger.info(response.choices[0].message.content)
-logger.info("-" * 80)
+    response = openai_client.chat.completions.create(
+        model=endpoint_name,
+        messages=[{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}],
+    )
+
+    logger.info(f"Session ID: {session_id}")
+    logger.info(f"Request ID: {request_id}")
+    logger.info("\nAssistant Response:")
+    logger.info("-" * 80)
+    logger.info(response.choices[0].message.content)
+    logger.info("-" * 80)
