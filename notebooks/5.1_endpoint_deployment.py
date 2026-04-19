@@ -103,7 +103,6 @@ agents.deploy(
     model_name=model_name,
     model_version=int(model_version),
     endpoint_name=endpoint_name,
-    usage_policy_id=cfg.usage_policy_id,
     scale_to_zero=True,
     workload_size="Small",
     deploy_feedback_model=False,
