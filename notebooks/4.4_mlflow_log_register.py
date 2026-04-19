@@ -155,20 +155,8 @@ model_config = {
 }
 
 test_request = {
-    "input": [{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}],
-    "custom_inputs": {
-        "session_id": f"s-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100000, 999999)}",
-        "request_id": f"req-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100000, 999999)}",
-    },
+    "messages": [{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}],
 }
-
-# Infer model signature from a sample prediction (required by Unity Catalog)
-_sample_response = agent.predict(context=None, model_input=test_request)
-signature = mlflow.models.infer_signature(
-    model_input=test_request,
-    model_output=_sample_response.model_dump(),
-)
-logger.info("✓ Model signature inferred")
 
 ts = datetime.now().strftime("%Y-%m-%d")
 with mlflow.start_run(
@@ -180,7 +168,6 @@ with mlflow.start_run(
         python_model="../arxiv_agent.py",  # code-based logging (mlflow 3.x)
         resources=resources,
         input_example=test_request,
-        signature=signature,
         model_config=model_config,
     )
     mlflow.log_metrics(results.metrics)
