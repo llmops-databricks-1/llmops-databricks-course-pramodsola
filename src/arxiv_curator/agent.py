@@ -155,7 +155,11 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
     ) -> ResponsesAgentResponse:
         """Handle a single agent request with full tracing."""
         if isinstance(model_input, dict):
-            model_input = ResponsesAgentRequest(**model_input)
+            # Handle ChatCompletionRequest format {"messages": [...]}
+            if "messages" in model_input and "input" not in model_input:
+                model_input = ResponsesAgentRequest(input=model_input["messages"])
+            else:
+                model_input = ResponsesAgentRequest(**model_input)
 
         # Extract custom inputs
         custom = model_input.custom_inputs or {}
@@ -275,6 +279,8 @@ def log_register_agent(
         "messages": [{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}]
     }
 
+    signature = mlflow.models.infer_signature(model_input=test_request)
+
     mlflow.set_experiment(cfg.experiment_name)
     ts = datetime.now().strftime("%Y-%m-%d")
 
@@ -287,6 +293,7 @@ def log_register_agent(
             python_model=agent_code_path,
             resources=resources,
             input_example=test_request,
+            signature=signature,
             model_config=model_config,
         )
         if evaluation_metrics:

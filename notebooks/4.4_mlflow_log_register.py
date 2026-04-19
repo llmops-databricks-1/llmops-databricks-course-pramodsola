@@ -158,6 +158,10 @@ test_request = {
     "messages": [{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}],
 }
 
+# Explicitly set ChatCompletionRequest signature for agents.deploy() compatibility
+signature = mlflow.models.infer_signature(model_input=test_request)
+logger.info("✓ Model signature set (ChatCompletionRequest format)")
+
 ts = datetime.now().strftime("%Y-%m-%d")
 with mlflow.start_run(
     run_name=f"arxiv-agent-{ts}",
@@ -168,6 +172,7 @@ with mlflow.start_run(
         python_model="../arxiv_agent.py",  # code-based logging (mlflow 3.x)
         resources=resources,
         input_example=test_request,
+        signature=signature,
         model_config=model_config,
     )
     mlflow.log_metrics(results.metrics)
