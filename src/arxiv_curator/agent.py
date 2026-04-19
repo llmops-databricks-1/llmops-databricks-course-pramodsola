@@ -54,7 +54,11 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
         self.lakebase_project_id = lakebase_project_id
 
         self.w = WorkspaceClient()
-        self.tools: list[ToolInfo] = self._load_tools()
+        try:
+            self.tools: list[ToolInfo] = self._load_tools()
+        except Exception as e:
+            logger.error(f"Tool loading failed — agent will run without tools: {type(e).__name__}: {e}")
+            self.tools = []
         self.memory: LakebaseMemory | None = self._init_memory()
         self.client = OpenAI(
             api_key=self._get_token(),
