@@ -182,7 +182,7 @@ Root-level file loaded by `mlflow.pyfunc.log_model()` for model serving deployme
 
 ```
 ArxivAgent
-    ↓  mlflow.genai.evaluate()  (word_count, polite_tone, hook_in_post)
+    ↓  mlflow.genai.evaluate()  (word_count_check, mentions_papers)
 Evaluation metrics
     ↓  mlflow.pyfunc.log_model()
 MLflow Run (arxiv-agent-{date})
@@ -202,7 +202,7 @@ Alias → version ready for serving
 - `serve_model()`: Creates or updates a Databricks serving endpoint with AI Gateway inference tables
 - `get_endpoint_status()`: Returns endpoint readiness state
 
-#### `utils/common.py` — Shared Utilities
+#### `utils/common.py` (`src/arxiv_curator/utils/common.py`) — Shared Utilities
 - `get_widget()`: Safe widget access with fallback default — works in both interactive notebooks and job runs
 
 #### Deployment Pipeline (`resources/register_deploy_agent.yml`)
@@ -223,7 +223,8 @@ Reusable evaluation runner called by the deployment pipeline before logging.
 
 | Notebook | What It Covers |
 |---|---|
-| **5.1 Endpoint Deployment** | `agents.deploy()`, environment vars, secrets injection, testing the live endpoint |
+| **5.1 Endpoint Deployment** | `agents.deploy()`, environment vars, secrets injection, schema validation, testing the live endpoint |
+| **5.1 Endpoint Deployment (Genie)** | Variant that re-registers with `DatabricksGenieSpace` resource for auto-permission grant at deploy time |
 | **5.2 SPN Permissions** | Reference — grant SPN access to Genie, Vector Search, SQL Warehouse |
 
 ### CI/CD Pipeline
@@ -293,10 +294,14 @@ databricks bundle deploy
 
 ### Run a notebook
 ```bash
+# Week 4
 databricks bundle run tracing_implementation_job
 databricks bundle run custom_agent_job
 databricks bundle run evaluation_theory_job
 databricks bundle run mlflow_log_register_job
+
+# Week 5
+databricks bundle run endpoint_deployment_job     # deploy to serving endpoint
 ```
 
 ---
