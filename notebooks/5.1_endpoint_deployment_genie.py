@@ -178,18 +178,31 @@ try:
 except Exception:
     logger.warning("LakeBase secret scope not accessible — memory disabled")
 
-agents.deploy(
-    model_name=model_name,
-    model_version=int(model_version),
-    endpoint_name=endpoint_name,
-    scale_to_zero=True,
-    workload_size="Small",
-    deploy_feedback_model=False,
-    environment_vars=_env_vars,
-)
-
-logger.info(f"✓ Deployment triggered for endpoint: {endpoint_name}")
-logger.info("Wait 5–10 minutes for the endpoint to become ready, then run the test cell below.")
+try:
+    agents.deploy(
+        model_name=model_name,
+        model_version=int(model_version),
+        endpoint_name=endpoint_name,
+        scale_to_zero=True,
+        workload_size="Small",
+        deploy_feedback_model=False,
+        environment_vars=_env_vars,
+    )
+    logger.info(f"✓ Deployment triggered for endpoint: {endpoint_name}")
+    logger.info("Wait 5–10 minutes for the endpoint to become ready, then run the test cell below.")
+except ValueError as e:
+    if "already serves model" in str(e):
+        logger.info(f"✓ Endpoint already serving the latest version — no update needed: {e}")
+    else:
+        raise
+except AttributeError as e:
+    if "auto_capture_config" in str(e):
+        logger.warning(
+            "Endpoint exists but has stale AI Gateway config (auto_capture_config=None). "
+            "Delete the endpoint in the Serving UI and re-run this cell to redeploy."
+        )
+    else:
+        raise
 
 # COMMAND ----------
 
