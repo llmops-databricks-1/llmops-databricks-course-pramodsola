@@ -99,6 +99,22 @@ logger.info("✓ Schema OK — input: messages, output: choices (ChatCompletionR
 
 # COMMAND ----------
 
+# LakeBase secret scope may only exist for the SPN (CI/CD). Check first, skip if missing.
+_env_vars = {
+    "GIT_SHA": "local",
+    "MODEL_VERSION": model_version,
+    "MODEL_SERVING_ENDPOINT_NAME": endpoint_name,
+    "MLFLOW_EXPERIMENT_ID": experiment.experiment_id,
+    "LAKEBASE_SP_HOST": w.config.host,
+}
+try:
+    dbutils.secrets.list(secret_scope)  # noqa: F821
+    _env_vars["LAKEBASE_SP_CLIENT_ID"] = f"{{{{secrets/{secret_scope}/client-id}}}}"
+    _env_vars["LAKEBASE_SP_CLIENT_SECRET"] = f"{{{{secrets/{secret_scope}/client-secret}}}}"
+    logger.info(f"✓ Secret scope '{secret_scope}' found — LakeBase secrets included")
+except Exception:
+    logger.warning(f"Secret scope '{secret_scope}' not accessible — deploying without LakeBase secrets (memory disabled)")
+
 agents.deploy(
     model_name=model_name,
     model_version=int(model_version),
@@ -106,15 +122,7 @@ agents.deploy(
     scale_to_zero=True,
     workload_size="Small",
     deploy_feedback_model=False,
-    environment_vars={
-        "GIT_SHA": "local",
-        "MODEL_VERSION": model_version,
-        "MODEL_SERVING_ENDPOINT_NAME": endpoint_name,
-        "MLFLOW_EXPERIMENT_ID": experiment.experiment_id,
-        "LAKEBASE_SP_CLIENT_ID": f"{{{{secrets/{secret_scope}/client-id}}}}",
-        "LAKEBASE_SP_CLIENT_SECRET": f"{{{{secrets/{secret_scope}/client-secret}}}}",
-        "LAKEBASE_SP_HOST": w.config.host,
-    },
+    environment_vars=_env_vars,
 )
 
 logger.info(f"✓ Deployment triggered for endpoint: {endpoint_name}")
