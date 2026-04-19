@@ -181,6 +181,18 @@ with mlflow.start_run(
 
 # COMMAND ----------
 
+# Verify the logged signature BEFORE registering — catch any MLflow override early
+_logged_info = mlflow.models.get_model_info(model_info.model_uri)
+_input_fields = [f.name for f in _logged_info.signature.inputs.inputs] if _logged_info.signature else []
+logger.info(f"Logged input schema fields: {_input_fields}")
+assert "messages" in _input_fields, (
+    f"STOP: Schema has '{_input_fields}' not 'messages'. "
+    "agents.deploy() will fail. Check arxiv_agent.py has no ResponsesAgentRequest imports at module level."
+)
+logger.info("✓ Schema OK — 'messages' field confirmed, safe to register")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## 6. Register to Unity Catalog
 

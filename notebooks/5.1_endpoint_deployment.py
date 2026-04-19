@@ -60,15 +60,25 @@ mv = client.get_model_version_by_alias(model_name, "latest-model")
 model_version = mv.version
 experiment = client.get_experiment_by_name(cfg.experiment_name)
 
-# Show schema so we can verify it's ChatCompletionRequest format before deploying
 import mlflow
+
 model_uri = f"models:/{model_name}/{model_version}"
 model_info = mlflow.models.get_model_info(model_uri)
+input_fields = [f.name for f in model_info.signature.inputs.inputs] if model_info.signature else []
+
 logger.info(f"Deploying version: {model_version}")
 logger.info(f"Run ID: {mv.run_id}")
-logger.info(f"Input schema: {model_info.signature.inputs if model_info.signature else 'NO SIGNATURE'}")
-logger.info("Schema must show 'messages' field — if it shows 'input'/'custom_inputs' re-run 4.4 first")
+logger.info(f"Input schema fields: {input_fields}")
 logger.info(f"Experiment ID: {experiment.experiment_id}")
+
+# Hard stop — agents.deploy() will always fail without 'messages' schema
+if "messages" not in input_fields:
+    raise ValueError(
+        f"Schema mismatch — input fields are {input_fields}, not ['messages']. "
+        "Re-run notebook 4.4 completely (all cells) to register a new model version, "
+        "then re-run this cell."
+    )
+logger.info("✓ Schema OK — 'messages' field confirmed, proceeding with deploy")
 
 # COMMAND ----------
 
