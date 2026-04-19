@@ -65,20 +65,24 @@ import mlflow
 model_uri = f"models:/{model_name}/{model_version}"
 model_info = mlflow.models.get_model_info(model_uri)
 input_fields = [f.name for f in model_info.signature.inputs.inputs] if model_info.signature else []
+output_fields = [f.name for f in model_info.signature.outputs.inputs] if (model_info.signature and model_info.signature.outputs) else []
 
 logger.info(f"Deploying version: {model_version}")
 logger.info(f"Run ID: {mv.run_id}")
 logger.info(f"Input schema fields: {input_fields}")
+logger.info(f"Output schema fields: {output_fields}")
 logger.info(f"Experiment ID: {experiment.experiment_id}")
 
-# Hard stop — agents.deploy() will always fail without 'messages' schema
+# Hard stop — agents.deploy() validates both input and output schemas
 if "messages" not in input_fields:
     raise ValueError(
-        f"Schema mismatch — input fields are {input_fields}, not ['messages']. "
-        "Re-run notebook 4.4 completely (all cells) to register a new model version, "
-        "then re-run this cell."
+        f"Input schema mismatch — got {input_fields}, need ['messages']. Re-run 4.4."
     )
-logger.info("✓ Schema OK — 'messages' field confirmed, proceeding with deploy")
+if "choices" not in output_fields:
+    raise ValueError(
+        f"Output schema mismatch — got {output_fields}, need ChatCompletionResponse (choices). Re-run 4.4."
+    )
+logger.info("✓ Schema OK — input: messages, output: choices (ChatCompletionResponse)")
 
 # COMMAND ----------
 
@@ -138,18 +142,14 @@ timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 session_id = f"s-{timestamp}-{random.randint(100000, 999999)}"
 request_id = f"req-{timestamp}-{random.randint(100000, 999999)}"
 
-response = openai_client.responses.create(
+response = openai_client.chat.completions.create(
     model=endpoint_name,
-    input=[{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}],
-    extra_body={"custom_inputs": {
-        "session_id": session_id,
-        "request_id": request_id,
-    }},
+    messages=[{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}],
 )
 
 logger.info(f"Session ID: {session_id}")
 logger.info(f"Request ID: {request_id}")
 logger.info("\nAssistant Response:")
 logger.info("-" * 80)
-logger.info(response.output[0].content[0].text)
+logger.info(response.choices[0].message.content)
 logger.info("-" * 80)

@@ -32,8 +32,34 @@ class _AgentLoader(mlflow.pyfunc.PythonModel):
         )
 
     def predict(self, context, model_input, params=None):
-        # No type annotations — MLflow must use the explicit signature from log_model
-        return self._agent.predict(context, model_input, params)
+        # No type annotations — MLflow must use the explicit signature from log_model.
+        # Returns ChatCompletionResponse format so agents.deploy() output schema check passes.
+        import time
+
+        response = self._agent.predict(context, model_input, params)
+
+        # Extract text from ResponsesAgentResponse
+        text = ""
+        if response.output:
+            content = response.output[-1].content
+            if content:
+                item = content[0]
+                text = item.get("text", "") if isinstance(item, dict) else str(item)
+
+        return {
+            "id": f"chatcmpl-agent-{int(time.time())}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": self._agent.llm_endpoint,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
 
 
 mlflow.models.set_model(_AgentLoader())

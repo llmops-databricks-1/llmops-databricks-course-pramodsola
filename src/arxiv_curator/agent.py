@@ -279,13 +279,18 @@ def log_register_agent(
         "messages": [{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}]
     }
     test_response = {
-        "output": [{
-            "type": "message",
-            "id": "chatcmpl-example",
-            "role": "assistant",
-            "status": "completed",
-            "content": [{"type": "output_text", "text": "Sample response.", "annotations": []}],
-        }]
+        "id": "chatcmpl-example",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "example-endpoint",
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "Sample response."},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
 
     signature = mlflow.models.infer_signature(model_input=test_request, model_output=test_response)
