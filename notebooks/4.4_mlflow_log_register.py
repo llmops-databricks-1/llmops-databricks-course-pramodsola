@@ -158,9 +158,19 @@ test_request = {
     "messages": [{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}],
 }
 
-# Explicitly set ChatCompletionRequest signature for agents.deploy() compatibility
-signature = mlflow.models.infer_signature(model_input=test_request)
-logger.info("✓ Model signature set (ChatCompletionRequest format)")
+# Unity Catalog requires both input AND output in the signature
+test_response = {
+    "output": [{
+        "type": "message",
+        "id": "chatcmpl-example",
+        "role": "assistant",
+        "status": "completed",
+        "content": [{"type": "output_text", "text": "Sample response.", "annotations": []}],
+    }]
+}
+
+signature = mlflow.models.infer_signature(model_input=test_request, model_output=test_response)
+logger.info("✓ Model signature set (input: ChatCompletionRequest, output: ResponsesAgentResponse)")
 
 ts = datetime.now().strftime("%Y-%m-%d")
 with mlflow.start_run(

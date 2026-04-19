@@ -278,8 +278,17 @@ def log_register_agent(
     test_request = {
         "messages": [{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}]
     }
+    test_response = {
+        "output": [{
+            "type": "message",
+            "id": "chatcmpl-example",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "output_text", "text": "Sample response.", "annotations": []}],
+        }]
+    }
 
-    signature = mlflow.models.infer_signature(model_input=test_request)
+    signature = mlflow.models.infer_signature(model_input=test_request, model_output=test_response)
 
     mlflow.set_experiment(cfg.experiment_name)
     ts = datetime.now().strftime("%Y-%m-%d")
