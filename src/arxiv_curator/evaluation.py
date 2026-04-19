@@ -87,9 +87,7 @@ def evaluate_agent(
 
     with open(eval_inputs_path) as f:
         eval_data = [
-            {"inputs": {"question": line.strip()}}
-            for line in f
-            if line.strip()
+            {"inputs": {"question": line.strip()}} for line in f if line.strip()
         ][:max_questions]
 
     def predict_fn(question: str) -> str:

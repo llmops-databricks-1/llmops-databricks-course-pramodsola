@@ -1,7 +1,6 @@
 # Databricks notebook source
 from databricks import agents
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.runtime import dbutils
 from loguru import logger
 from mlflow import MlflowClient
 
