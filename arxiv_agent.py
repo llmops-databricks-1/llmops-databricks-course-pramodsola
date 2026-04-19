@@ -40,9 +40,18 @@ class _AgentLoader(mlflow.pyfunc.PythonModel):
     def predict(self, context, model_input, params=None):
         # No type annotations — MLflow must use the explicit signature from log_model.
         # Returns ChatCompletionResponse format so agents.deploy() output schema check passes.
+        #
+        # MLflow serving passes a pandas DataFrame; convert to dict so ArxivAgent
+        # can handle it (it checks isinstance(model_input, dict)).
         import time
 
         self._ensure_agent()
+
+        if hasattr(model_input, "to_dict"):
+            # pandas DataFrame → take first row as dict
+            records = model_input.to_dict(orient="records")
+            model_input = records[0] if records else {}
+
         response = self._agent.predict(context, model_input, params)
 
         # Extract text from ResponsesAgentResponse
