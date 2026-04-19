@@ -51,10 +51,13 @@ w = WorkspaceClient()
 
 # DO NOT RUN — requires SPN created in notebook 3.4
 scope_name = "arxiv-agent-scope"
-os.environ["DATABRICKS_CLIENT_ID"] = dbutils.secrets.get(scope_name, "client_id")  # noqa: F821
-os.environ["DATABRICKS_CLIENT_SECRET"] = dbutils.secrets.get(scope_name, "client_secret")  # noqa: F821
-
-logger.info("✓ SPN credentials loaded from secret scope")
+try:
+    os.environ["DATABRICKS_CLIENT_ID"] = dbutils.secrets.get(scope_name, "client_id")  # noqa: F821
+    os.environ["DATABRICKS_CLIENT_SECRET"] = dbutils.secrets.get(scope_name, "client_secret")  # noqa: F821
+    logger.info("✓ SPN credentials loaded from secret scope")
+except Exception as e:
+    logger.warning(f"⚠️ Skipping SPN auth — secret scope '{scope_name}' not available: {e}")
+    logger.warning("This notebook is a reference/demo. Run notebook 3.4 first to create the SPN.")
 
 # COMMAND ----------
 

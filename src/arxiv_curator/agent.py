@@ -9,7 +9,16 @@ from uuid import uuid4
 
 import mlflow
 from databricks.sdk import WorkspaceClient
+from loguru import logger
+from mlflow import MlflowClient
 from mlflow.entities import SpanType
+from mlflow.models.resources import (
+    DatabricksGenieSpace,
+    DatabricksServingEndpoint,
+    DatabricksSQLWarehouse,
+    DatabricksTable,
+    DatabricksVectorSearchIndex,
+)
 from mlflow.pyfunc import PythonModelContext
 from mlflow.types.responses import (
     ResponsesAgentRequest,
@@ -18,6 +27,7 @@ from mlflow.types.responses import (
 )
 from openai import OpenAI
 
+from arxiv_curator.config import ProjectConfig
 from arxiv_curator.mcp import ToolInfo, create_mcp_tools
 from arxiv_curator.memory import LakebaseMemory
 
@@ -219,3 +229,83 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
         """Streaming predict — yields a single event with the full response."""
         response = self.predict(context, model_input, params)
         yield ResponsesAgentStreamEvent(data=response)
+
+
+def log_register_agent(
+    cfg: ProjectConfig,
+    git_sha: str,
+    run_id: str,
+    agent_code_path: str,
+    model_name: str,
+    evaluation_metrics: dict | None = None,
+) -> mlflow.entities.model_registry.RegisteredModel:
+    """Log and register the ArxivAgent as an MLflow pyfunc model to Unity Catalog.
+
+    Args:
+        cfg: Project configuration.
+        git_sha: Git commit SHA for tracking.
+        run_id: Run identifier for tracking.
+        agent_code_path: Path to the agent Python entry point (arxiv_agent.py).
+        model_name: Fully qualified model name in Unity Catalog.
+        evaluation_metrics: Optional evaluation metrics to log with the run.
+
+    Returns:
+        RegisteredModel object from Unity Catalog.
+    """
+    resources = [
+        DatabricksServingEndpoint(endpoint_name=cfg.llm_endpoint),
+        DatabricksVectorSearchIndex(index_name=f"{cfg.catalog}.{cfg.schema}.arxiv_index"),
+        DatabricksTable(table_name=f"{cfg.catalog}.{cfg.schema}.arxiv_papers"),
+        DatabricksSQLWarehouse(warehouse_id=cfg.warehouse_id),
+        DatabricksServingEndpoint(endpoint_name=cfg.embedding_endpoint),
+    ]
+    if cfg.genie_space_id:
+        resources.append(DatabricksGenieSpace(genie_space_id=cfg.genie_space_id))
+
+    model_config = {
+        "catalog": cfg.catalog,
+        "schema": cfg.schema,
+        "genie_space_id": cfg.genie_space_id,
+        "system_prompt": cfg.system_prompt,
+        "llm_endpoint": cfg.llm_endpoint,
+        "lakebase_project_id": cfg.lakebase_project_id,
+    }
+
+    test_request = {
+        "input": [{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}]
+    }
+
+    mlflow.set_experiment(cfg.experiment_name)
+    ts = datetime.now().strftime("%Y-%m-%d")
+
+    with mlflow.start_run(
+        run_name=f"arxiv-agent-{ts}",
+        tags={"git_sha": git_sha, "run_id": run_id},
+    ):
+        model_info = mlflow.pyfunc.log_model(
+            name="agent",
+            python_model=agent_code_path,
+            resources=resources,
+            input_example=test_request,
+            model_config=model_config,
+        )
+        if evaluation_metrics:
+            mlflow.log_metrics(evaluation_metrics)
+
+    logger.info(f"Registering model: {model_name}")
+    registered_model = mlflow.register_model(
+        model_uri=model_info.model_uri,
+        name=model_name,
+        env_pack="databricks_model_serving",
+        tags={"git_sha": git_sha, "run_id": run_id},
+    )
+    logger.info(f"Registered version: {registered_model.version}")
+
+    client = MlflowClient()
+    client.set_registered_model_alias(
+        name=model_name,
+        alias="latest-model",
+        version=registered_model.version,
+    )
+    logger.info(f"✓ Alias 'latest-model' → version {registered_model.version}")
+    return registered_model
