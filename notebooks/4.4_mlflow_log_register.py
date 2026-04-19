@@ -124,8 +124,11 @@ resources = [
     DatabricksTable(table_name=f"{cfg.catalog}.{cfg.schema}.arxiv_papers"),
     DatabricksSQLWarehouse(warehouse_id=cfg.warehouse_id),
 ]
-if cfg.genie_space_id:
-    resources.append(DatabricksGenieSpace(genie_space_id=cfg.genie_space_id))
+# NOTE: Genie space intentionally excluded from resources.
+# Including it causes agents.deploy() pre-deployment to fail with a
+# permission metadata error (empty tree node ID) on this workspace.
+# The agent still uses Genie at runtime via model_config; this only
+# affects Databricks' auto-permission-grant during endpoint creation.
 
 logger.info(f"✓ Declared {len(resources)} Databricks resources")
 

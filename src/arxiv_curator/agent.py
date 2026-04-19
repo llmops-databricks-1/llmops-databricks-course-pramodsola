@@ -263,8 +263,9 @@ def log_register_agent(
         DatabricksSQLWarehouse(warehouse_id=cfg.warehouse_id),
         DatabricksServingEndpoint(endpoint_name=cfg.embedding_endpoint),
     ]
-    if cfg.genie_space_id:
-        resources.append(DatabricksGenieSpace(genie_space_id=cfg.genie_space_id))
+    # Genie space excluded from resources — causes agents.deploy() pre-deployment failure
+    # (empty tree node ID permission error on this workspace).
+    # model_config still passes genie_space_id so the agent uses it at runtime.
 
     model_config = {
         "catalog": cfg.catalog,
