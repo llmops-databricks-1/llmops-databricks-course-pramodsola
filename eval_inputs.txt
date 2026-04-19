@@ -1,0 +1,10 @@
+What are the most recent papers on transformer architectures?
+Find papers about retrieval-augmented generation (RAG).
+What research exists on LLM evaluation methods?
+Show me papers about fine-tuning large language models.
+What are recent advances in AI agents and tool use?
+Find papers discussing prompt engineering techniques.
+What research covers multimodal models combining vision and language?
+Are there papers on efficient inference and model quantization?
+What papers discuss LLM safety and alignment?
+Find research on in-context learning and few-shot prompting.

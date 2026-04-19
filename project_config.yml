@@ -11,6 +11,7 @@ dev:
   vector_search_endpoint: llmops_course_vs_endpoint
   genie_space_id: 01f113061bf41578baff744a41bd9ab0
   lakebase_project_id: pramodk-sola-lakebase
+  experiment_name: /Shared/llmops-course-pramodsola
 
 # Acceptance/Staging environment
 acc:
