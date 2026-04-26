@@ -124,8 +124,11 @@ resources = [
     DatabricksTable(table_name=f"{cfg.catalog}.{cfg.schema}.arxiv_papers"),
     DatabricksSQLWarehouse(warehouse_id=cfg.warehouse_id),
 ]
-if cfg.genie_space_id:
-    resources.append(DatabricksGenieSpace(genie_space_id=cfg.genie_space_id))
+# NOTE: Genie space intentionally excluded from resources.
+# Including it causes agents.deploy() pre-deployment to fail with a
+# permission metadata error (empty tree node ID) on this workspace.
+# The agent still uses Genie at runtime via model_config; this only
+# affects Databricks' auto-permission-grant during endpoint creation.
 
 logger.info(f"✓ Declared {len(resources)} Databricks resources")
 
@@ -155,20 +158,28 @@ model_config = {
 }
 
 test_request = {
-    "input": [{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}],
-    "custom_inputs": {
-        "session_id": f"s-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100000, 999999)}",
-        "request_id": f"req-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(100000, 999999)}",
-    },
+    "messages": [{"role": "user", "content": "What are recent papers about LLMs and reasoning?"}],
 }
 
-# Infer model signature from a sample prediction (required by Unity Catalog)
-_sample_response = agent.predict(context=None, model_input=test_request)
-signature = mlflow.models.infer_signature(
-    model_input=test_request,
-    model_output=_sample_response.model_dump(),
-)
-logger.info("✓ Model signature inferred")
+# Unity Catalog requires both input AND output signatures.
+# agents.deploy() requires output to be ChatCompletionResponse or StringResponse.
+test_response = {
+    "id": "chatcmpl-example",
+    "object": "chat.completion",
+    "created": 0,
+    "model": "example-endpoint",
+    "choices": [
+        {
+            "index": 0,
+            "message": {"role": "assistant", "content": "Sample response."},
+            "finish_reason": "stop",
+        }
+    ],
+    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+}
+
+signature = mlflow.models.infer_signature(model_input=test_request, model_output=test_response)
+logger.info("✓ Model signature set (input: ChatCompletionRequest, output: ChatCompletionResponse)")
 
 ts = datetime.now().strftime("%Y-%m-%d")
 with mlflow.start_run(
@@ -186,6 +197,18 @@ with mlflow.start_run(
     mlflow.log_metrics(results.metrics)
     logger.info(f"✓ Model logged: {model_info.model_uri}")
     logger.info(f"  Run ID: {run.info.run_id}")
+
+# COMMAND ----------
+
+# Verify the logged signature BEFORE registering — catch any MLflow override early
+_logged_info = mlflow.models.get_model_info(model_info.model_uri)
+_input_fields = [f.name for f in _logged_info.signature.inputs.inputs] if _logged_info.signature else []
+logger.info(f"Logged input schema fields: {_input_fields}")
+assert "messages" in _input_fields, (
+    f"STOP: Schema has '{_input_fields}' not 'messages'. "
+    "agents.deploy() will fail. Check arxiv_agent.py has no ResponsesAgentRequest imports at module level."
+)
+logger.info("✓ Schema OK — 'messages' field confirmed, safe to register")
 
 # COMMAND ----------
 

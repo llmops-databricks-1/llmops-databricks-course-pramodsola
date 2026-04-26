@@ -9,7 +9,15 @@ from uuid import uuid4
 
 import mlflow
 from databricks.sdk import WorkspaceClient
+from loguru import logger
+from mlflow import MlflowClient
 from mlflow.entities import SpanType
+from mlflow.models.resources import (
+    DatabricksServingEndpoint,
+    DatabricksSQLWarehouse,
+    DatabricksTable,
+    DatabricksVectorSearchIndex,
+)
 from mlflow.pyfunc import PythonModelContext
 from mlflow.types.responses import (
     ResponsesAgentRequest,
@@ -18,6 +26,7 @@ from mlflow.types.responses import (
 )
 from openai import OpenAI
 
+from arxiv_curator.config import ProjectConfig
 from arxiv_curator.mcp import ToolInfo, create_mcp_tools
 from arxiv_curator.memory import LakebaseMemory
 
@@ -44,7 +53,14 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
         self.lakebase_project_id = lakebase_project_id
 
         self.w = WorkspaceClient()
-        self.tools: list[ToolInfo] = self._load_tools()
+        try:
+            self.tools: list[ToolInfo] = self._load_tools()
+        except Exception as e:
+            logger.error(
+                f"Tool loading failed — agent will run without tools: "
+                f"{type(e).__name__}: {e}"
+            )
+            self.tools = []
         self.memory: LakebaseMemory | None = self._init_memory()
         self.client = OpenAI(
             api_key=self._get_token(),
@@ -145,7 +161,11 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
     ) -> ResponsesAgentResponse:
         """Handle a single agent request with full tracing."""
         if isinstance(model_input, dict):
-            model_input = ResponsesAgentRequest(**model_input)
+            # Handle ChatCompletionRequest format {"messages": [...]}
+            if "messages" in model_input and "input" not in model_input:
+                model_input = ResponsesAgentRequest(input=model_input["messages"])
+            else:
+                model_input = ResponsesAgentRequest(**model_input)
 
         # Extract custom inputs
         custom = model_input.custom_inputs or {}
@@ -219,3 +239,108 @@ class ArxivAgent(mlflow.pyfunc.PythonModel):
         """Streaming predict — yields a single event with the full response."""
         response = self.predict(context, model_input, params)
         yield ResponsesAgentStreamEvent(data=response)
+
+
+def log_register_agent(
+    cfg: ProjectConfig,
+    git_sha: str,
+    run_id: str,
+    agent_code_path: str,
+    model_name: str,
+    evaluation_metrics: dict | None = None,
+) -> mlflow.entities.model_registry.RegisteredModel:
+    """Log and register the ArxivAgent as an MLflow pyfunc model to Unity Catalog.
+
+    Args:
+        cfg: Project configuration.
+        git_sha: Git commit SHA for tracking.
+        run_id: Run identifier for tracking.
+        agent_code_path: Path to the agent Python entry point (arxiv_agent.py).
+        model_name: Fully qualified model name in Unity Catalog.
+        evaluation_metrics: Optional evaluation metrics to log with the run.
+
+    Returns:
+        RegisteredModel object from Unity Catalog.
+    """
+    resources = [
+        DatabricksServingEndpoint(endpoint_name=cfg.llm_endpoint),
+        DatabricksVectorSearchIndex(index_name=f"{cfg.catalog}.{cfg.schema}.arxiv_index"),
+        DatabricksTable(table_name=f"{cfg.catalog}.{cfg.schema}.arxiv_papers"),
+        DatabricksSQLWarehouse(warehouse_id=cfg.warehouse_id),
+        DatabricksServingEndpoint(endpoint_name=cfg.embedding_endpoint),
+    ]
+    # Genie space excluded from resources — causes agents.deploy() pre-deployment failure
+    # (empty tree node ID permission error on this workspace).
+    # model_config still passes genie_space_id so the agent uses it at runtime.
+
+    model_config = {
+        "catalog": cfg.catalog,
+        "schema": cfg.schema,
+        "genie_space_id": cfg.genie_space_id,
+        "system_prompt": cfg.system_prompt,
+        "llm_endpoint": cfg.llm_endpoint,
+        "lakebase_project_id": cfg.lakebase_project_id,
+    }
+
+    test_request = {
+        "messages": [
+            {
+                "role": "user",
+                "content": "What are recent papers about LLMs and reasoning?",
+            }
+        ]
+    }
+    test_response = {
+        "id": "chatcmpl-example",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "example-endpoint",
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "Sample response."},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+
+    signature = mlflow.models.infer_signature(
+        model_input=test_request, model_output=test_response
+    )
+
+    mlflow.set_experiment(cfg.experiment_name)
+    ts = datetime.now().strftime("%Y-%m-%d")
+
+    with mlflow.start_run(
+        run_name=f"arxiv-agent-{ts}",
+        tags={"git_sha": git_sha, "run_id": run_id},
+    ):
+        model_info = mlflow.pyfunc.log_model(
+            name="agent",
+            python_model=agent_code_path,
+            resources=resources,
+            input_example=test_request,
+            signature=signature,
+            model_config=model_config,
+        )
+        if evaluation_metrics:
+            mlflow.log_metrics(evaluation_metrics)
+
+    logger.info(f"Registering model: {model_name}")
+    registered_model = mlflow.register_model(
+        model_uri=model_info.model_uri,
+        name=model_name,
+        env_pack="databricks_model_serving",
+        tags={"git_sha": git_sha, "run_id": run_id},
+    )
+    logger.info(f"Registered version: {registered_model.version}")
+
+    client = MlflowClient()
+    client.set_registered_model_alias(
+        name=model_name,
+        alias="latest-model",
+        version=registered_model.version,
+    )
+    logger.info(f"✓ Alias 'latest-model' → version {registered_model.version}")
+    return registered_model

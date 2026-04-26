@@ -182,7 +182,7 @@ Root-level file loaded by `mlflow.pyfunc.log_model()` for model serving deployme
 
 ```
 ArxivAgent
-    ↓  mlflow.genai.evaluate()  (word_count, polite_tone, hook_in_post)
+    ↓  mlflow.genai.evaluate()  (word_count_check, mentions_papers)
 Evaluation metrics
     ↓  mlflow.pyfunc.log_model()
 MLflow Run (arxiv-agent-{date})
@@ -191,6 +191,61 @@ Unity Catalog: {catalog}.{schema}.arxiv_agent  v1
     ↓  set_registered_model_alias("latest-model")
 Alias → version ready for serving
 ```
+
+---
+
+## Week 5 — Deployment, CI/CD & SPN Permissions
+
+### What Was Built
+
+#### `serving.py` — Serving Endpoint Utilities
+- `serve_model()`: Creates or updates a Databricks serving endpoint with AI Gateway inference tables
+- `get_endpoint_status()`: Returns endpoint readiness state
+
+#### `utils/common.py` (`src/arxiv_curator/utils/common.py`) — Shared Utilities
+- `get_widget()`: Safe widget access with fallback default — works in both interactive notebooks and job runs
+
+#### Deployment Pipeline (`resources/register_deploy_agent.yml`)
+Two-task job chaining `log_register_agent` → `deploy_agent`:
+- Evaluates the agent, logs to MLflow, registers to Unity Catalog, then deploys to a serving endpoint
+- Triggered automatically by the CD pipeline on merge to main
+
+#### `agent.py` — `log_register_agent()` function
+Extracted from notebook 4.4 into a reusable function:
+- Declares all Databricks resources (LLM endpoint, embedding endpoint, vector index, table, warehouse, Genie)
+- Logs model as pyfunc with code-based logging
+- Registers to Unity Catalog and sets `latest-model` alias
+
+#### `evaluation.py` — `evaluate_agent()` function
+Reusable evaluation runner called by the deployment pipeline before logging.
+
+### Notebooks
+
+| Notebook | What It Covers |
+|---|---|
+| **5.1 Endpoint Deployment** | `agents.deploy()`, environment vars, secrets injection, schema validation, testing the live endpoint |
+| **5.1 Endpoint Deployment (Genie)** | Variant that re-registers with `DatabricksGenieSpace` resource for auto-permission grant at deploy time |
+| **5.2 SPN Permissions** | Reference — grant SPN access to Genie, Vector Search, SQL Warehouse |
+
+### CI/CD Pipeline
+
+```
+PR to main
+    ↓
+CI (.github/workflows/ci.yml)
+  - pre-commit + ruff linting
+  - pytest
+    ↓ (on merge)
+CD (.github/workflows/cd.yml)
+  - databricks bundle deploy → acc
+  - databricks bundle deploy → prd + git tag
+```
+
+**GitHub Actions setup required (one-time):**
+- Create environments `acc` and `prd` in GitHub repo Settings → Environments
+- Add secrets per environment: `DATABRICKS_CLIENT_ID`, `DATABRICKS_CLIENT_SECRET`
+- Add variable per environment: `DATABRICKS_HOST`
+- Course workspace SPN secret scopes already created: `dev_SPN`, `acc_SPN`, `prd_SPN`
 
 ---
 
@@ -239,10 +294,14 @@ databricks bundle deploy
 
 ### Run a notebook
 ```bash
+# Week 4
 databricks bundle run tracing_implementation_job
 databricks bundle run custom_agent_job
 databricks bundle run evaluation_theory_job
 databricks bundle run mlflow_log_register_job
+
+# Week 5
+databricks bundle run endpoint_deployment_job     # deploy to serving endpoint
 ```
 
 ---
