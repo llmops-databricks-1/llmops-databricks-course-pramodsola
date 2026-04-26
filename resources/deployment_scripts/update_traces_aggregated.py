@@ -33,18 +33,14 @@ experiment_id = experiment.experiment_id
 
 traces_table = f"{catalog}.{schema}.trace_logs_{experiment_id}"
 aggregated_view = f"{catalog}.{schema}.arxiv_traces_aggregated"
+endpoint_name = f"arxiv-agent-pramodsola-{env}"
 
 logger.info(f"Source traces table: {traces_table}")
 logger.info(f"Target view: {aggregated_view}")
 
 # COMMAND ----------
 
-endpoint_name = f"arxiv-agent-pramodsola-{env}"
-
-# Fetch traces not yet evaluated:
-# - Filters to our personal serving endpoint only
-# - Excludes traces that already have assessments (already scored)
-# - Extracts the agent's final response from ChatCompletionResponse format
+# Fetch traces not yet evaluated for our personal endpoint
 new_traces_df = spark.sql(f"""
     SELECT
         t.trace_id,
@@ -61,10 +57,8 @@ logger.info(f"New traces to evaluate: {len(traces_pdf)}")
 
 # COMMAND ----------
 
-if len(traces_pdf) == 0:
-    logger.info("No new traces to evaluate — skipping scoring.")
-else:
-    # Build eval DataFrame in the format mlflow.genai.evaluate expects
+# Score all new traces — early exit if nothing to do
+if len(traces_pdf) > 0:
     eval_pdf = pd.DataFrame(
         {
             "trace_id": traces_pdf["trace_id"],
@@ -73,14 +67,11 @@ else:
         }
     )
 
-    # COMMAND ----------
-
-    # Run heuristic scorers on ALL traces (no LLM cost)
+    # Heuristic scorers on ALL traces (no LLM cost)
     heuristic_result = mlflow.genai.evaluate(
         data=eval_pdf[["inputs", "outputs"]],
         scorers=[word_count_check, mentions_papers],
     )
-
     for trace_id, assessments in zip(
         eval_pdf["trace_id"],
         heuristic_result.result_df["assessments"],
@@ -92,12 +83,9 @@ else:
                 name=a["assessment_name"],
                 value=a["feedback"]["value"],
             )
-
     logger.info(f"Logged word_count_check + mentions_papers for {len(eval_pdf)} traces")
 
-    # COMMAND ----------
-
-    # Run LLM-judge scorer on 10% sample only (costs one LLM call per trace)
+    # LLM-judge scorer on 10% sample only (costs one LLM call per trace)
     sample_size = max(1, int(len(eval_pdf) * 0.1))
     sampled_pdf = eval_pdf.sample(n=sample_size, random_state=42)
     logger.info(f"Sampled {len(sampled_pdf)} traces for LLM-judge evaluation")
@@ -106,7 +94,6 @@ else:
         data=sampled_pdf[["inputs", "outputs"]],
         scorers=[polite_tone_guideline],
     )
-
     for trace_id, assessments in zip(
         sampled_pdf["trace_id"],
         llm_result.result_df["assessments"],
@@ -118,8 +105,9 @@ else:
                 name=a["assessment_name"],
                 value=a["feedback"]["value"],
             )
-
     logger.info(f"Logged polite_tone for {len(sampled_pdf)} traces")
+else:
+    logger.info("No new traces — skipping scoring, proceeding to view refresh.")
 
 # COMMAND ----------
 
@@ -127,16 +115,16 @@ else:
 #
 # Per trace it computes:
 # 1. Basic info: trace_id, request_time, request_preview, response_text, latency_seconds
-# 2. Span metrics (via LATERAL VIEW explode):
-#    - call_llm_exec_count — number of LLM calls the agent made
+# 2. Span metrics via LATERAL VIEW explode:
+#    - call_llm_exec_count — number of LLM calls
 #    - tool_call_count — number of tool invocations
-#    - total_tokens_used — sum of tokens from each call_llm span
-# 3. Quality scores from assessments (0/1):
+#    - total_tokens_used — summed from each call_llm span
+# 3. Quality scores (0/1):
 #    - word_count_check, mentions_papers (heuristic — 'true'/'false')
 #    - polite_tone (LLM judge — 'Pass'/'Fail', NULL if not in 10% sample)
 #
-# Note: scores may show 0 for the first ~15 min after running the scorer —
-# the MLflow Delta sync job ([<experiment_id>] Trace Archive Job) runs every 15 min.
+# Note: scores may show 0 for ~15 min after running — the MLflow Delta sync job
+# ("[<experiment_id>] Trace Archive Job") runs every 15 min.
 
 spark.sql(f"""
     CREATE OR REPLACE VIEW {aggregated_view} AS
