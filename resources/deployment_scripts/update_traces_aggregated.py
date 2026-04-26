@@ -40,16 +40,19 @@ logger.info(f"Target view: {aggregated_view}")
 
 # COMMAND ----------
 
-# Fetch traces not yet evaluated for our personal endpoint
+# Fetch all unevaluated traces — covers notebook runs and serving endpoint
 new_traces_df = spark.sql(f"""
     SELECT
         t.trace_id,
         t.request_preview,
-        get_json_object(t.response, '$.choices[0].message.content') AS response_text
+        COALESCE(
+            get_json_object(t.response, '$.choices[0].message.content'),
+            get_json_object(t.response, '$.output[-1].content[0].text'),
+            t.response
+        ) AS response_text
     FROM {traces_table} t
-    WHERE tags['model_serving_endpoint_name'] = '{endpoint_name}'
-      AND (t.assessments IS NULL OR size(t.assessments) = 0)
-      AND get_json_object(t.response, '$.choices[0].message.content') IS NOT NULL
+    WHERE (t.assessments IS NULL OR size(t.assessments) = 0)
+      AND t.response IS NOT NULL
 """)
 
 traces_pdf = new_traces_df.toPandas()
@@ -132,7 +135,12 @@ spark.sql(f"""
         t.trace_id,
         t.request_time,
         t.request_preview,
-        get_json_object(t.response, '$.choices[0].message.content') AS response_text,
+        tags['model_serving_endpoint_name'] AS endpoint_name,
+        COALESCE(
+            get_json_object(t.response, '$.choices[0].message.content'),
+            get_json_object(t.response, '$.output[-1].content[0].text'),
+            t.response
+        ) AS response_text,
         CAST(t.execution_duration_ms / 1000.0 AS DOUBLE) AS latency_seconds,
         COUNT(IF(s.name = 'call_llm', 1, NULL)) AS call_llm_exec_count,
         COUNT(IF(s.name = 'execute_tool', 1, NULL)) AS tool_call_count,
@@ -166,9 +174,9 @@ spark.sql(f"""
         END AS polite_tone
     FROM {traces_table} t
     LATERAL VIEW explode(spans) AS s
-    WHERE tags['model_serving_endpoint_name'] = '{endpoint_name}'
+    WHERE t.response IS NOT NULL
     GROUP BY t.trace_id, t.request_time, t.execution_duration_ms,
-             t.request_preview, t.response, t.assessments
+             t.request_preview, t.response, t.assessments, t.tags
 """)
 
 logger.info(f"✓ View {aggregated_view} created/updated")
