@@ -20,9 +20,13 @@ variables:
   schedule_pause_status:
     description: schedule pause status
     default: PAUSED
+  warehouse_id:
+    description: SQL warehouse ID for dashboards
+    default: 96e26e80fcd91931
 
 include:
   - resources/*.yml
+  - resources/dashboard/*.yml
 
 sync:
   include:
