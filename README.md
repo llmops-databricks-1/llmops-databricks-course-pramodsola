@@ -13,6 +13,7 @@ An AI-powered research assistant built on Databricks that ingests, processes, an
 - Persists conversation history in Lakebase (managed PostgreSQL)
 - Evaluates agent quality with MLflow Guidelines, Judges, and custom scorers
 - Registers the agent to Unity Catalog as a versioned, deployable model
+- Runs a daily monitoring job that scores all production traces and surfaces quality metrics on a Lakeview dashboard
 
 ---
 
@@ -33,8 +34,16 @@ course-code-hub/
 │   ├── 1.1–1.4                  # Foundation models, provisioned throughput, ingestion
 │   ├── 2.1–2.4                  # Context engineering, PDF parsing, chunking, vector search
 │   ├── 3.1–3.6                  # Agent tools, RAG, MCP, Genie, session memory, UC functions
-│   └── 4.1–4.4                  # Tracing, custom agent, evaluation, log & register
-├── resources/                   # Databricks Asset Bundle job definitions
+│   ├── 4.1–4.4                  # Tracing, custom agent, evaluation, log & register
+│   ├── 5.1–5.2                  # Endpoint deployment (standard + Genie), SPN permissions
+│   └── 6.1                      # Trace propagation — send sample queries to live endpoint
+├── resources/
+│   ├── deployment_scripts/      # Notebooks run as Databricks jobs (not interactive)
+│   │   └── update_traces_aggregated.py   # Daily evaluation + view refresh pipeline
+│   ├── dashboard/               # Lakeview dashboard definition
+│   │   ├── agent_monitoring_dashboard.lvdash.json
+│   │   └── agent_monitoring_dashboard.yml
+│   └── *.yml                    # Databricks Asset Bundle job definitions
 ├── arxiv_agent.py               # MLflow pyfunc entry point for model serving
 ├── eval_inputs.txt              # Evaluation questions for agent testing
 ├── databricks.yml               # Databricks Asset Bundle root config
@@ -249,6 +258,91 @@ CD (.github/workflows/cd.yml)
 
 ---
 
+## Week 6 — Monitoring Pipeline & Lakeview Dashboard
+
+### What Was Built
+
+#### `notebooks/6.1_propagate_traces.py` — Trace Generator
+Dispatches 13 representative research queries to the live serving endpoint (`arxiv-agent-pramodsola-{env}`) with a 2-second gap between calls. Generates a statistically diverse trace population for the evaluation pipeline to score.
+
+#### `resources/deployment_scripts/update_traces_aggregated.py` — Evaluation Pipeline
+End-to-end daily job that:
+1. Reads all unevaluated traces from `trace_logs_{experiment_id}` (WHERE assessments IS NULL)
+2. Scores **100% of traces** with heuristic scorers (`word_count_check`, `mentions_papers`) — zero LLM cost
+3. Scores a **10% random sample** with the LLM judge (`polite_tone_guideline`) — cost-controlled
+4. Writes scores back via `mlflow.log_feedback()` per trace
+5. Issues `CREATE OR REPLACE VIEW arxiv_traces_aggregated` — one clean row per trace for dashboarding
+
+#### `resources/update_traces_aggregated.yml` — Scheduled Job
+Cron schedule `0 0 7 * * ?` (07:00 Amsterdam). Controlled by the `schedule_pause_status` DAB variable:
+- `PAUSED` in dev and acc (run on demand)
+- `UNPAUSED` in prd (runs automatically every day)
+
+#### `resources/dashboard/agent_monitoring_dashboard.lvdash.json` — Lakeview Dashboard
+Version-controlled JSON dashboard definition deployed via `databricks bundle deploy`. Reads the live `arxiv_traces_aggregated` view on every page load.
+
+| Widget | Type | Metric |
+|---|---|---|
+| Total Traces | Counter | `COUNT(trace_id)` |
+| Total Tokens Used | Counter | `SUM(total_tokens_used)` |
+| Avg Latency (s) | Counter | `AVG(latency_seconds)` |
+| Avg Tokens / Trace | Counter | `AVG(total_tokens_used)` |
+| Token Usage Over Time | Line chart | Daily token sum by `DATE(request_time)` |
+| Avg Latency Over Time | Line chart | Daily avg latency — detects regressions |
+| Assessment Pass Rates | Pivot table | Date × word_count_check / mentions_papers / polite_tone |
+| LLM Calls vs Tool Calls | Scatter plot | call_llm_exec_count vs tool_call_count, coloured by tokens |
+| Trace Log Details | Table (25/page) | Per-trace drill-down with all quality scores |
+
+### Notebooks
+
+| Notebook | What It Covers |
+|---|---|
+| **6.1 Propagate Traces** | Send sample queries to live endpoint · populate trace table for monitoring |
+
+### Monitoring Pipeline
+
+```
+6.1_propagate_traces.py  →  arxiv-agent-pramodsola-dev endpoint
+                              │
+                              │  AI Gateway auto-captures every request
+                              ▼
+                         MLflow trace store
+                              │
+                              │  [experiment_id] Trace Archive Job (every 15 min)
+                              ▼
+                    trace_logs_{experiment_id} Delta table
+                              │
+                              │  update_traces_aggregated.py (daily at 07:00)
+                              ▼
+              ┌───────────────────────────────────────┐
+              │  Score 100%: word_count_check,        │
+              │              mentions_papers           │
+              │  Score  10%: polite_tone (LLM judge)  │
+              │  mlflow.log_feedback() per trace       │
+              └───────────────────────────────────────┘
+                              │
+                              ▼
+              arxiv_traces_aggregated (live SQL view)
+                              │
+                              ▼
+              [dev] Arxiv Agent Monitoring Dashboard
+```
+
+### Live Results (April 2026)
+
+| Metric | Value |
+|---|---|
+| Total traces | 58 |
+| Total tokens served | 94,392 |
+| Avg latency | 8.13 s |
+| Avg tokens / trace | 1,627 |
+| Avg LLM calls / trace | 1.3 |
+| Avg tool calls / trace | 0.3 |
+| Mentions papers pass rate | 67.2% |
+| Word count pass rate | 8.6% (threshold set at 350 words — requires recalibration) |
+
+---
+
 ## Tools & Technologies
 
 | Tool | Purpose |
@@ -301,7 +395,11 @@ databricks bundle run evaluation_theory_job
 databricks bundle run mlflow_log_register_job
 
 # Week 5
-databricks bundle run endpoint_deployment_job     # deploy to serving endpoint
+databricks bundle run endpoint_deployment_job           # deploy to serving endpoint
+databricks bundle run endpoint_deployment_genie_job     # deploy Genie variant
+
+# Week 6
+databricks bundle run update-and-evaluate-traces        # run evaluation + view refresh manually
 ```
 
 ---
